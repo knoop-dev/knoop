@@ -33,21 +33,21 @@ namespace amsim {
 
 using Job = std::function<void()>;
 
-class H5Writer {
+class HDF5Writer {
  public:
-  H5Writer(const H5Writer&) = delete;
-  H5Writer& operator=(const H5Writer&) = delete;
+  HDF5Writer(const HDF5Writer&) = delete;
+  HDF5Writer& operator=(const HDF5Writer&) = delete;
 
-  static H5Writer& get_instance(
+  static HDF5Writer& get_instance(
       const std::filesystem::path& results_path,
       std::size_t n_gens,
       std::size_t n_reps) {
-    static H5Writer instance(results_path, n_gens, n_reps);
+    static HDF5Writer instance(results_path, n_gens, n_reps);
     instance_ = &instance;
     return *instance_;
   }
 
-  static H5Writer& get_instance() {
+  static HDF5Writer& get_instance() {
     if (instance_ == nullptr)
       throw std::runtime_error("Must initialise Writer before calling");
     return *instance_;
@@ -66,7 +66,7 @@ class H5Writer {
   static void write(
       T&& data, const std::string& name, std::size_t rep, std::size_t gen);
 
-  ~H5Writer() {
+  ~HDF5Writer() {
     {
       std::lock_guard<std::mutex> lg(mutex_);
       done_ = true;
@@ -78,14 +78,14 @@ class H5Writer {
   }
 
  private:
-  explicit H5Writer(
+  explicit HDF5Writer(
       const std::filesystem::path& results_path,
       std::size_t n_gens,
       std::size_t n_reps)
       : file_(results_path, HighFive::File::Overwrite),
         n_gens_(n_gens),
         n_reps_(n_reps) {
-    thread_ = std::thread(&H5Writer::threadCallback, this);
+    thread_ = std::thread(&HDF5Writer::threadCallback, this);
     file_.createGroup("params");
     file_.createGroup("raw");
     file_.createGroup("summary");
@@ -104,7 +104,7 @@ class H5Writer {
 
   void summarise();
 
-  inline static H5Writer* instance_ = nullptr;
+  inline static HDF5Writer* instance_ = nullptr;
 
   HighFive::File file_;
   std::size_t n_gens_;
@@ -120,7 +120,7 @@ class H5Writer {
   void threadCallback();
 };
 
-inline void H5Writer::threadCallback() {
+inline void HDF5Writer::threadCallback() {
   std::unique_lock<std::mutex> lk(mutex_);
   while (!done_ || !jobs_.empty()) {
     cv_.wait(lk, [this] { return done_ || !jobs_.empty(); });
@@ -136,7 +136,7 @@ inline void H5Writer::threadCallback() {
 }
 
 template <typename T>
-inline void H5Writer::createEstimator(
+inline void HDF5Writer::createEstimator(
     T&& /*data*/,
     const std::string& name,
     const std::vector<std::string>& row_labels,
@@ -163,7 +163,7 @@ inline void H5Writer::createEstimator(
 }
 
 template <typename T>
-inline void H5Writer::writeEstimator(
+inline void HDF5Writer::writeEstimator(
     T&& data, const std::string& name, std::size_t rep, std::size_t gen) {
   {
     std::lock_guard<std::mutex> lg(mutex_);
@@ -182,7 +182,7 @@ inline void H5Writer::writeEstimator(
   cv_.notify_one();
 }
 
-inline void H5Writer::write_params(const Params& params) {
+inline void HDF5Writer::write_params(const Params& params) {
   auto params_group = file_.getGroup("params");
 
   // assemble effect matrix
@@ -227,21 +227,21 @@ inline void H5Writer::write_params(const Params& params) {
 }
 
 template <typename T>
-inline void H5Writer::create(
+inline void HDF5Writer::create(
     T&& data,
     const std::string& name,
     const std::vector<std::string>& row_labels,
     const std::vector<std::string>& col_labels) {
-  H5Writer::get_instance().createEstimator(data, name, row_labels, col_labels);
+  HDF5Writer::get_instance().createEstimator(data, name, row_labels, col_labels);
 }
 
 template <typename T>
-inline void H5Writer::write(
+inline void HDF5Writer::write(
     T&& data, const std::string& name, std::size_t rep, std::size_t gen) {
-  H5Writer::get_instance().writeEstimator(data, name, rep, gen);
+  HDF5Writer::get_instance().writeEstimator(data, name, rep, gen);
 }
 
-inline void H5Writer::summarise() {
+inline void HDF5Writer::summarise() {
   for (const std::string& name : datasets_) {
     std::string path_summary = std::format("summary/{}", name);
 
