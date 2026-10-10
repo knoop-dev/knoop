@@ -1,17 +1,17 @@
-# amsim
+# knoop
 
 [![release](https://github.com/lvthnn/amsim/actions/workflows/release.yml/badge.svg)](https://github.com/lvthnn/amsim/actions/workflows/release.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22741101.svg)](https://doi.org/10.5281/zenodo.22741101)
 
-amsim is a CLI tool for efficient, flexible forward-time simulation of
+knoop is a CLI tool for efficient, flexible forward-time simulation of
 assortative mating and participation/ascertainment effects. It supports arbitary
 multivariate assortment regimes and a highly configurable sampling suite for
 simulating various study designs.
 
-amsim is free software, licensed under the GNU General Public License v3.
+knoop is free software, licensed under the GNU General Public License v3.
 
 This software is under development and may contain bugs. Please report bugs
-via [issues](https://github.com/lvthnn/amsim/issues) on GitHub or by
+via [issues](https://github.com/knoop/amsim/issues) on GitHub or by
 [email](mailto:kh626@imperial.ac.uk).
 
 ## Installation
