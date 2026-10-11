@@ -7,18 +7,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Add debugging options depending on CMAKE_BUILD_TYPE
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
-endif()
-
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
-  add_compile_options(-march=x86-64 -mtune=haswell)
+  add_compile_options(-march=x86-64-v2 -mtune=haswell)
 endif()
 
 # Register knoop as a header-only library
 add_library(knoop_lib INTERFACE)
+
+# Add debugging options depending on CMAKE_BUILD_TYPE, and
+# only add these to knoop_lib (not, e.g., HDF5)
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_compile_options(knoop_lib INTERFACE
+    -fsanitize=address,undefined -fno-omit-frame-pointer)
+  target_link_options(knoop_lib INTERFACE
+    -fsanitize=address,undefined -fno-omit-frame-pointer)
+endif()
 
 # Public headers for users of the lib
 target_include_directories(knoop_lib
@@ -84,7 +87,6 @@ target_link_libraries(knoop_lib INTERFACE OpenMP::OpenMP_CXX)
 
 # Fetch dependencies
 include(FetchContent)
-
 set(FETCHCONTENT_QUIET False)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
@@ -196,7 +198,7 @@ if (BUILD_BENCHMARKS)
 endif()
 
 # The CLI tool
-option(BUILD_EXECUTABLE "Build the knoop CLI tool" ON)
+option(BUILD_EXECUTABLE "Build knoop CLI tool" ON)
 
 if (BUILD_EXECUTABLE)
   add_executable(knoop src/knoop.cc)
