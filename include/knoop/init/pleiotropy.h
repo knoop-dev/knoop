@@ -28,9 +28,9 @@
 namespace knoop {
 
 // phenotype genetic component correlation optimiser
-class OptimisePhenotypeArchitecture {
+class InducePleiotropy {
  public:
-  explicit OptimisePhenotypeArchitecture(Params& params)
+  explicit InducePleiotropy(Params& params)
       : engine_(random::Xoshiro256pp::getInstance()),
         n_pheno_(params.pheno.n_pheno),
         n_loc_(params.geno.n_loc),
@@ -109,7 +109,7 @@ class OptimisePhenotypeArchitecture {
   void updateState();
 };
 
-inline void OptimisePhenotypeArchitecture::randomState() {
+inline void InducePleiotropy::randomState() {
   pheno_effects_.setZero();
   std::vector<std::size_t> iota(n_loc_);
 
@@ -143,17 +143,17 @@ inline void OptimisePhenotypeArchitecture::randomState() {
   }
 }
 
-inline void OptimisePhenotypeArchitecture::computeInitObjective() {
+inline void InducePleiotropy::computeInitObjective() {
   diff_cur_ = pheno_effects_.transpose() * pheno_effects_ - gen_cov_;
   err_frob_ = diff_cur_.squaredNorm();
   err_frob_opt_ = err_frob_;
 }
 
-inline void OptimisePhenotypeArchitecture::computeExpected() {
+inline void InducePleiotropy::computeExpected() {
   expected_ = pheno_effects_.transpose() * pheno_effects_;
 }
 
-inline void OptimisePhenotypeArchitecture::proposeState() {
+inline void InducePleiotropy::proposeState() {
   do {
     pheno_cur_ = random::UniformInt::sample(engine_, 0, n_pheno_);
   } while (pheno_fixed_[pheno_cur_]);
@@ -179,7 +179,7 @@ inline void OptimisePhenotypeArchitecture::proposeState() {
                (2 * d_cur_ * diff_cur_(pheno_cur_, pheno_cur_));
 }
 
-inline void OptimisePhenotypeArchitecture::updateState() {
+inline void InducePleiotropy::updateState() {
   double acc_prob = std::min(1.0, std::exp(-delta_cur_ / temp_cur_));
   double u = random::Uniform::sample(engine_);
 
@@ -204,7 +204,7 @@ inline void OptimisePhenotypeArchitecture::updateState() {
   }
 }
 
-inline void OptimisePhenotypeArchitecture::operator()() {
+inline void InducePleiotropy::operator()() {
   randomState();
   computeInitObjective();
 
