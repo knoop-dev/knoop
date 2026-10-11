@@ -20,7 +20,7 @@
 #include <knoop/init.h>
 #include <knoop/sample.h>
 #include <knoop/simulation.h>
-#include <knoop/transform.h>
+#include <knoop/mutate.h>
 #include <benchmark/benchmark.h>
 #include <omp.h>
 #include <sys/resource.h>

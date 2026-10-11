@@ -21,7 +21,7 @@
 #include <knoop/estimate.h>
 #include <knoop/init.h>
 #include <knoop/sample.h>
-#include <knoop/transform.h>
+#include <knoop/mutate.h>
 #include <omp.h>
 
 #include <chrono>
@@ -40,7 +40,7 @@ inline Params preprocessSimulation(const SimulationSpec& spec) {
   Log::info("Preprocessing simulation");
 
   Params params = buildParams(spec);
-  OptimisePhenotypeArchitecture opt(params);
+  InducePleiotropy opt(params);
   opt();
 
   return params;

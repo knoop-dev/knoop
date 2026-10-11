@@ -17,6 +17,6 @@
 
 #pragma once
 
-#include <knoop/transform/mating.h>
-#include <knoop/transform/score.h>
-#include <knoop/transform/update.h>
+#include <knoop/mutate/mate.h>
+#include <knoop/mutate/score.h>
+#include <knoop/mutate/inherit.h>
