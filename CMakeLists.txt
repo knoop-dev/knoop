@@ -14,6 +14,9 @@ endif()
 # Register knoop as a header-only library
 add_library(knoop_lib INTERFACE)
 
+# Shut up GCC's ABI-change notice
+add_compile_options(-Wno-psabi)
+
 # Add debugging options depending on CMAKE_BUILD_TYPE, and
 # only add these to knoop_lib (not, e.g., HDF5)
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")

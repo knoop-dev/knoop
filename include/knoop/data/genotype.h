@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <algorithm>
 
 namespace knoop {
 
@@ -237,13 +238,17 @@ inline void GenotypeBuffer::decompress(
   assert(
       view() == BufferLayout::LocusMajor && "locus-major layout is required");
   assert(
-      individual_start < individuals() && individual_end <= individuals() &&
+      individual_start < individual_end && individual_end <= individuals() &&
       "individual indices are out of bounds or specify an empty interval");
   assert(
       buffer_out.rows() >=
           static_cast<Eigen::Index>(individual_end - individual_start) &&
       buffer_out.cols() >= static_cast<Eigen::Index>(loci.size()) &&
       "output buffer is too small for decompressed data");
+  assert(
+      std::ranges::all_of(
+          loci, [this](std::size_t loc) { return loc < this->loci(); }) &&
+      "locus index / indices are out of bounds");
 
   std::size_t n_loci = loci.size();
   std::size_t start = individual_start / 64;
