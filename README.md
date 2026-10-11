@@ -7,9 +7,9 @@
 a [microhardness test](https://en.wikipedia.org/wiki/Knoop_hardness_test). Or
 just **knoop**, whichever you like.
 
-**knoop** is a command-line tool for quantitative genetics simulation. It lets you run
-sensitivity analyses of study designs and estimation methods under assortative mating and
-selection bias at biobank scale.
+**knoop** (formerly **amsim**) is a command-line tool for quantitative genetics simulation.
+It lets you run sensitivity analyses of study designs and estimation methods under assortative
+mating and selection bias at biobank scale.
 
 **knoop** is free software, licensed under the [GNU General Public License v3](LICENSE).
 
@@ -57,8 +57,13 @@ knoop --help --n-individuals  # usage string for specific option(s)...
 ```
 Small simulations are relatively easy to configure:
 ```sh
-knoop --n-individuals 10000 --n-loci 5000 \
-      --phenotype height --var-genetic 0.5 --effects 'normal(0, 2.5)' \
+knoop --n-individuals 10000 \
+      --n-loci 5000 \
+      --n-generations 20 \
+      --phenotype height \
+        --var-genetic 0.5 \
+        --effects 'normal(0, 2.5)' \
+        --n-loci 5000 \
       --estimator heritability
 ```
 Running the above in the command line will produce two files: `results.h5`, a HDF5
