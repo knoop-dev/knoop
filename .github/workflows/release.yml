@@ -78,13 +78,13 @@ jobs:
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install hdf5
+        run: brew install libomp
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libhdf5-dev libopenblas-dev
+          sudo apt-get install -y libopenblas-dev
 
       - name: Create build directory
         run: |
