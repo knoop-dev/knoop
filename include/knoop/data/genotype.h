@@ -237,13 +237,12 @@ inline void GenotypeBuffer::decompress(
   assert(
       view() == BufferLayout::LocusMajor && "locus-major layout is required");
   assert(
-      (individual_start < numIndividuals() ||
-       individual_end < numIndividuals()) &&
-      (ind_end <= ind_start) &&
+      individual_start < individuals() && individual_end <= individuals() &&
       "individual indices are out of bounds or specify an empty interval");
   assert(
-      out.rows() > static_cast<Eigen::Index>(ind_end - ind_start) &&
-      out.cols() > static_cast<Eigen::Index>(loc.size()) &&
+      buffer_out.rows() >=
+          static_cast<Eigen::Index>(individual_end - individual_start) &&
+      buffer_out.cols() >= static_cast<Eigen::Index>(loci.size()) &&
       "output buffer is too small for decompressed data");
 
   std::size_t n_loci = loci.size();
