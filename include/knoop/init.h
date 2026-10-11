@@ -17,6 +17,6 @@
 
 #pragma once
 
-#include <knoop/init/initialise.h>
-#include <knoop/init/optimise_arch.h>
+#include <knoop/init/founders.h>
+#include <knoop/init/pleiotropy.h>
 #include <knoop/init/setup.h>
