@@ -97,11 +97,11 @@ jobs:
 
       - name: Package CLI binary
         run: |
-          tar -czf amsim-v${{ needs.create-tag.outputs.version }}-${{ matrix.name }}.tar.gz \
-              -C ${{github.workspace}}/build amsim
+          tar -czf knoop-v${{ needs.create-tag.outputs.version }}-${{ matrix.name }}.tar.gz \
+              -C ${{github.workspace}}/build knoop
 
       - name: Upload CLI binary
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.create-tag.outputs.version }}
-          files: amsim-v${{ needs.create-tag.outputs.version }}-${{ matrix.name }}.tar.gz
+          files: knoop-v${{ needs.create-tag.outputs.version }}-${{ matrix.name }}.tar.gz
