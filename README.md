@@ -1,6 +1,4 @@
-<img src=".github/assets/knoop.svg" width="200" align="right">
-  
-# knoop[^1]
+# knoop[^1] <picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/knoop_dark.svg"><img src=".github/assets/knoop_light.svg" width="250" align="right" hspace="6"></picture>
 
 [![release](https://github.com/lvthnn/amsim/actions/workflows/release.yml/badge.svg)](https://github.com/lvthnn/amsim/actions/workflows/release.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22741101.svg)](https://doi.org/10.5281/zenodo.22741101)
