@@ -1,4 +1,4 @@
-# knoop[^1]
+# knoop[^1] <img src=".github/assets/knoop.svg" width="250" align="right" hspace="6">
 
 [![release](https://github.com/lvthnn/amsim/actions/workflows/release.yml/badge.svg)](https://github.com/lvthnn/amsim/actions/workflows/release.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22741101.svg)](https://doi.org/10.5281/zenodo.22741101)
@@ -71,6 +71,7 @@ file with parameters, raw and summarised data, and a log file named `results.log
 
 ## Contributing
 
-**knoop** is open source software under active development. Befittingly, contributions
-are encouraged and welcome. Consult the [contribution guide](CONTRIBUTING.md) for guidance
-on where to start and how to contribute effectively.
+**knoop** is open source software under active development. Befittingly,
+contributions are encouraged and welcome. Consult the
+[contribution guide](CONTRIBUTING.md) for tips on where to start and how to
+contribute effectively.
