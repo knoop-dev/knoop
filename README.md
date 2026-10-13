@@ -1,61 +1,79 @@
-# amsim
+<img src=".github/assets/knoop.svg" width="200" align="right">
+  
+# knoop[^1]
 
-amsim is a CLI tool for efficient, flexible forward-time simulation of
-assortative mating and participation/ascertainment effects. It supports arbitary
-multivariate assortment regimes and a highly configurable sampling suite for
-simulating various study designs.
+[![release](https://github.com/lvthnn/amsim/actions/workflows/release.yml/badge.svg)](https://github.com/lvthnn/amsim/actions/workflows/release.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22741101.svg)](https://doi.org/10.5281/zenodo.22741101)
 
-amsim is free software, licensed under the GNU General Public License v3.
+[^1]: **K**nown **N**uisances **o**f **O**bservational **P**henogenetics. Also
+a [microhardness test](https://en.wikipedia.org/wiki/Knoop_hardness_test). Or
+just **knoop**, whichever you like.
+
+**knoop** (formerly **amsim**) is a command-line tool for quantitative genetics simulation.
+It lets you run sensitivity analyses of study designs and estimation methods under assortative
+mating and selection bias at biobank scale.
+
+**knoop** is free software, licensed under the [GNU General Public License v3](LICENSE).
 
 This software is under development and may contain bugs. Please report bugs
-via [issues](https://github.com/lvthnn/amsim/issues) on GitHub or by
-[email](mailto:kh626@imperial.ac.uk).
+via [issues](https://github.com/knoop/issues) on GitHub or via [email](mailto:kh626@imperial.ac.uk).
 
 ## Installation
 
-### Option A: download a prebuilt binary (recommended)
+### Prebuilt binaries (recommended)
 
 Prebuilt binaries for Linux (x86_64, arm64) and macOS (x86_64, arm64) are
-attached to every [release](https://github.com/lvthnn/amsim/releases).
-Dependencies are linked statically or built directly into the binary, so no
-installation aside from the binary is required.
-
-To install amsim, grab the appropriate filename for your platform (e.g.
-`amsim-v0.2.0-macos-arm64.tar.gz`) from the
+attached to every [release](https://github.com/lvthnn/amsim/releases). To
+install **knoop**, grab the appropriate filename for your platform from the
 [latest release page](https://github.com/lvthnn/amsim/releases/latest).
 
-### Option B: build from source
+### Building from source via CMake
 
-### Prerequisites
+The following dependencies are required to build from source:
+- CMake 3.20+
+- A C++23 compiler
+- BLAS and LAPACK
+- OpenMP
 
-- CMake >= 3.20
-- A C++23 compiler (tested with recent Clang and GCC)
-- BLAS and LAPACK (on macOS, Apple's Accelerate framework is used automatically;
-  on Linux, install e.g. OpenBLAS: `apt install libopenblas-dev liblapack-dev`
-  or equivalent)
-- HDF5 with C bindings (`apt install libhdf5-dev`, `brew install hdf5`, or
-  equivalent)
-
-Linux and macOS are supported natively. Windows is not currently natively
-supported, although you can use WSL.
-
-### Building
+macOS's Accelerate library provides BLAS and LAPACK natively. On Linux, these
+can be installed, e.g., via `apt` as `libopenblas-dev` and `liblapack-dev` on
+Debian-based distributions or equivalents. Currently, Windows is not supported,
+although you can use the [Windows Subsystem for Linux (WSL)](https://github.com/microsoft/WSL).
+With dependencies sorted, the following can be used to build the software:
 
 ```sh
-git clone https://github.com/lvthnn/amsim.git
-cd amsim
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
+git clone https://github.com/lvthnn/knoop.git
+cmake -S knoop -B knoop/build -DCMAKE_BUILD_TYPE=Release
+cmake --build knoop/build --target knoop --parallel
 ```
 
-This may take some time.
+This will create the `knoop` binary inside of `knoop/build`.
 
 ## Usage
 
-amsim is driven entirely through command-line flags. Every flag has detailed,
+**knoop** is driven entirely through command-line flags. Every flag has detailed,
 example-driven documentation built in:
-
 ```sh
-amsim --help                  # display help message + exit
-amsim --help --n-individuals  # usage string for specific option(s)
+knoop --help                  # display help message + exit
+knoop --help --n-individuals  # usage string for specific option(s)...
 ```
+Small simulations are relatively easy to configure:
+```sh
+knoop --n-individuals 10000 \
+      --n-loci 5000 \
+      --n-generations 20 \
+      --phenotype height \
+        --var-genetic 0.5 \
+        --effects 'normal(0, 2.5)' \
+        --n-loci 5000 \
+      --estimator heritability
+```
+Running the above in the command line will produce two files: `results.h5`, a HDF5
+file with parameters, raw and summarised data, and a log file named `results.log`.
+
+## Contributing
+
+**knoop** is open source software under active development. Befittingly,
+contributions are encouraged and welcome. Consult the
+[contribution guide](CONTRIBUTING.md) for tips on where to start and how to
+contribute effectively.
