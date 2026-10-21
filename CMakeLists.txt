@@ -93,6 +93,28 @@ include(FetchContent)
 set(FETCHCONTENT_QUIET False)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
+# Configured the Lua scripting / configuration layer. Lua v5.4.9 is stored under
+# external/lua
+file(GLOB LUA_SOURCES external/lua/*.c)
+list(FILTER LUA_SOURCES EXCLUDE REGEX "(lua|luac)\\.c$") # exclude runtime envs
+add_library(lua_static STATIC "${LUA_SOURCES}")
+target_include_directories(lua_static PUBLIC external/lua)
+set_target_properties(lua_static PROPERTIES C_STANDARD 99)
+
+set(SOL2_LUA_VERSION "5.4" CACHE STRING "" FORCE)
+set(SOL2_BUILD_LUA FALSE CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+  sol2
+  GIT_REPOSITORY https://github.com/ThePhD/sol2
+  GIT_TAG v3.5.0
+  USES_TERMINAL_DOWNLOAD TRUE
+  DOWNLOAD_EXTRACT_TIMESTAMP ON
+  EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(sol2)
+target_link_libraries(knoop_lib INTERFACE sol2::sol2 lua_static)
+
 # HDF5 – use FetchContent instead of relying on user install since e.g.
 # Homebrew dynamically links against libszip and libaec which we don't want
 # in the prebuilt binaries
@@ -205,7 +227,9 @@ option(BUILD_EXECUTABLE "Build knoop CLI tool" ON)
 
 if (BUILD_EXECUTABLE)
   add_executable(knoop src/knoop.cc)
+  add_executable(sol_test src/sol_test.cc)
   target_link_libraries(knoop PRIVATE knoop_lib)
+  target_link_libraries(sol_test PRIVATE knoop_lib)
   target_compile_definitions(knoop PRIVATE
     knoop_OS="${CMAKE_SYSTEM_NAME}"
     knoop_VERSION="${PROJECT_VERSION}"
