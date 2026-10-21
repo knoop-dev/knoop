@@ -15,6 +15,9 @@ lib/
 
 compile_commands.json
 
+# Documentation
+docs/
+
 # Prerequisites
 *.d
 
