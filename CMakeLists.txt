@@ -187,6 +187,15 @@ FetchContent_MakeAvailable(HighFive)
 
 target_link_libraries(knoop_lib INTERFACE HighFive::HighFive)
 
+# tskit – found under external/tskit, requires external/kastore as well
+file(GLOB TSKIT_SOURCES external/tskit/*.c external/kastore/kastore.c)
+
+add_library(tskit_lib STATIC "${TSKIT_SOURCES}")
+target_include_directories(tskit_lib PUBLIC external external/kastore)
+set_target_properties(tskit_lib PROPERTIES C_STANDARD 99)
+
+target_link_libraries(knoop_lib INTERFACE tskit_lib)
+
 # tomlplusplus
 FetchContent_Declare(
     tomlplusplus
