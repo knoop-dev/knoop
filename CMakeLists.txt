@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(knoop LANGUAGES CXX VERSION 0.4.0)
+project(knoop LANGUAGES CXX C VERSION 0.5.0)
 
 # C++ standard
 set(CMAKE_CXX_STANDARD 23)
