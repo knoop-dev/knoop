@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <knoop/core/check.h>
 #include <knoop/core/distributions.h>
 #include <knoop/core/error.h>
 #include <knoop/core/log.h>
