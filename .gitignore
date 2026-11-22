@@ -15,8 +15,9 @@ lib/
 
 compile_commands.json
 
-# Documentation
-docs/
+# Documentation build artifacts
+docs/_build/
+docs/api/
 
 # Prerequisites
 *.d
