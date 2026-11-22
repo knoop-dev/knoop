@@ -52,10 +52,11 @@ if (APPLE)
   target_link_libraries(knoop_lib INTERFACE ${ACCELERATE_FRAMEWORK})
   target_compile_definitions(knoop_lib INTERFACE ACCELERATE_NEW_LAPACK)
 else()
-  set(BLA_STATIC ON)
-  find_package(BLAS REQUIRED)
-  find_package(LAPACK REQUIRED)
-  target_link_libraries(knoop_lib INTERFACE BLAS::BLAS LAPACK::LAPACK)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+  find_library(OPENBLAS_LIB openblas REQUIRED)
+  find_library(LAPACK_LIB lapack REQUIRED)
+  target_link_libraries(knoop_lib INTERFACE
+    ${OPENBLAS_LIB} ${LAPACK_LIB} gfortran m pthread)
 endif()
 
 # Statically linking OpenMP, a bit involved since we need to
