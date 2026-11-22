@@ -17,8 +17,10 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
 #include <knoop/core/log.h>
 #include <knoop/core/utils.h>
+#include <omp.h>
 
 #include <boost/asio.hpp>
 #include <boost/process.hpp>
