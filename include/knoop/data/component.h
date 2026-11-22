@@ -22,12 +22,12 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <format>
 #include <ostream>
-#include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace knoop {
 
-enum Component { Genetic = 0, Environmental = 1, Vertical = 2, Total = 3 };
+enum Component { Genetic = 0, Environmental = 1, Indirect = 2, Total = 3 };
 
 inline Component operator++(Component& type, int) {
   Component old = type;
@@ -46,7 +46,7 @@ inline Component componentFromString(const std::string& s) {
   std::string l = boost::to_lower_copy(s);
   if (l == "genetic") return Component::Genetic;
   if (l == "environmental") return Component::Environmental;
-  if (l == "vertical") return Component::Vertical;
+  if (l == "indirect") return Component::Indirect;
   if (l == "total") return Component::Total;
   throw KnoopInvalidArgumentError("Unknown component type {}", l);
 }
@@ -57,12 +57,12 @@ inline std::string componentToString(Component type) {
       return "genetic";
     case Component::Environmental:
       return "environ";
-    case Component::Vertical:
-      return "vertical";
+    case Component::Indirect:
+      return "indirect";
     case Component::Total:
       return "total";
   }
-  __builtin_unreachable();
+  std::unreachable();
 }
 
 inline std::ostream& operator<<(std::ostream& os, Component type) {

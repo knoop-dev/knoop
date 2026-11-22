@@ -28,11 +28,20 @@ namespace knoop {
 
 // Buffer structure to store phenotype data
 class PhenotypeBuffer {
+ private:
+  const std::size_t n_ind_;
+  const std::size_t n_sex_;
+  const std::size_t n_pheno_;
+  std::vector<double> data_;
+
+  Eigen::MatrixXd comp_mean_;
+  Eigen::MatrixXd comp_var_;
+
  public:
   explicit PhenotypeBuffer(const Params& params)
-      : n_ind_(params.global.n_ind),
+      : n_ind_(params.numIndividuals()),
         n_sex_(n_ind_ / 2),
-        n_pheno_(params.pheno.n_pheno),
+        n_pheno_(params.pheno.size()),
         data_(4 * n_ind_ * n_pheno_),
         comp_mean_(4, n_pheno_),
         comp_var_(4, n_pheno_) {}
@@ -150,22 +159,13 @@ class PhenotypeBuffer {
   Eigen::Ref<const Eigen::VectorXd> componentVar(Component type) const {
     return comp_var_.row(static_cast<int>(type));
   }
-
- private:
-  const std::size_t n_ind_;
-  const std::size_t n_sex_;
-  const std::size_t n_pheno_;
-  std::vector<double> data_;
-
-  Eigen::MatrixXd comp_mean_;
-  Eigen::MatrixXd comp_var_;
 };
 
 inline void PhenotypeBuffer::computeStats() {
   for (Component type :
        {Component::Genetic,
         Component::Environmental,
-        Component::Vertical,
+        Component::Indirect,
         Component::Total}) {
     Eigen::Index col_type = static_cast<int>(type);
     comp_mean_.row(col_type) = (*this)(type).colwise().mean();
