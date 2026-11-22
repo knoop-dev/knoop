@@ -20,21 +20,23 @@ add_compile_options(-Wno-psabi)
 # Options:
 option(BUILD_LINK_OPENMP "Statically link against OpenMP" ON)
 option(BUILD_BENCHMARKS "Build knoop benchmarking suite" OFF)
+option(BUILD_TESTS "Build knoop test suite" OFF)
 option(BUILD_EXECUTABLE "Build knoop CLI tool" ON)
+option(BUILD_SANITIZE "Enable ASan + UBSan" OFF)
 
 # Add debugging options depending on CMAKE_BUILD_TYPE, and only add these to
 # knoop_lib (not, e.g., HDF5 or other dependencies – this leads to exponentially
 # slower compile times in debug mode)
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_compile_options(knoop_lib INTERFACE
+if (BUILD_SANITIZE)
+  target_compile_options(knoop_lib INTERFACE 
     -fsanitize=address,undefined -fno-omit-frame-pointer)
-  target_link_options(knoop_lib INTERFACE
+  target_link_options(knoop_lib INTERFACE 
     -fsanitize=address,undefined -fno-omit-frame-pointer)
 endif()
 
 # Public headers for users of the lib
 target_include_directories(knoop_lib
-  INTERFACE
+  INTERFACE 
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 
@@ -220,18 +222,6 @@ set_target_properties(tskit_lib PROPERTIES C_STANDARD 99)
 
 target_link_libraries(knoop_lib INTERFACE tskit_lib)
 
-# tomlplusplus
-FetchContent_Declare(
-    tomlplusplus
-    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
-    GIT_TAG v3.4.0
-    USES_TERMINAL_DOWNLOAD TRUE
-    DOWNLOAD_EXTRACT_TIMESTAMP ON
-)
-FetchContent_MakeAvailable(tomlplusplus)
-
-target_link_libraries(knoop_lib INTERFACE tomlplusplus::tomlplusplus)
-
 # use Google Benchmark
 if (BUILD_BENCHMARKS)
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
@@ -248,6 +238,25 @@ if (BUILD_BENCHMARKS)
 
   add_executable(benchmarks benchmarks/benchmarks.cc)
   target_link_libraries(benchmarks PRIVATE knoop_lib benchmark::benchmark)
+endif()
+
+# Test suite
+if (BUILD_TESTS)
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest
+    GIT_TAG v1.16.0
+    USES_TERMINAL_DOWNLOAD TRUE
+    DOWNLOAD_EXTRACT_TIMESTAMP ON
+    EXCLUDE_FROM_ALL
+  )
+  FetchContent_MakeAvailable(googletest)
+
+  enable_testing()
+  add_executable(knoop_tests tests/tests.cc)
+  target_link_libraries(knoop_tests PRIVATE knoop_lib GTest::gtest_main)
+  include(GoogleTest)
+  gtest_discover_tests(knoop_tests)
 endif()
 
 # The CLI tool
