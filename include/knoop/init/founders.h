@@ -27,8 +27,8 @@ namespace knoop {
 class GenerateHaplotypes {
  public:
   explicit GenerateHaplotypes(const Params& params)
-      : random_seed_(params.global.random_seed),
-        loc_maf_(params.geno.locus_freq) {};
+      : random_seed_(params.randomSeed()),
+        loc_maf_(params.geno.locusFrequencies()) {};
 
   void operator()(State& state);
 

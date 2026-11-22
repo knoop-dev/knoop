@@ -50,7 +50,7 @@ class SampleEstimatorStrategy {
         n_rows_(n_rows),
         n_cols_(n_cols),
         data_(n_rows_, n_cols_) {
-    HDF5Writer::create(data_, name_h5_, row_labels_, col_labels_);
+    HDF5Writer::create(name_h5_, row_labels_, col_labels_, n_rows_, n_cols_);
   }
 
   virtual ~SampleEstimatorStrategy() = default;
@@ -90,8 +90,8 @@ class SampleEstimatorMeanStrategy : public SampleEstimatorStrategy<P> {
             sample_name,
             sample_dir,
             {},
-            params.pheno.names,
-            params.pheno.n_pheno) {}
+            params.pheno.names(),
+            params.pheno.size()) {}
 
   void compute() override {
     Eigen::MatrixXd phenotypes =
@@ -112,8 +112,8 @@ class SampleEstimatorVarStrategy : public SampleEstimatorStrategy<P> {
             sample_name,
             sample_dir,
             {},
-            params.pheno.names,
-            params.pheno.n_pheno) {}
+            params.pheno.names(),
+            params.pheno.size()) {}
 
   void compute() override {
     Eigen::MatrixXd phenotypes =
@@ -138,11 +138,11 @@ class SampleEstimatorCovStrategy : public SampleEstimatorStrategy<P> {
             "sample_cov",
             sample_name,
             sample_dir,
-            params.pheno.names,
-            params.pheno.names,
-            params.pheno.n_pheno,
-            params.pheno.n_pheno),
-        n_ind_(params.global.n_ind) {}
+            params.pheno.names(),
+            params.pheno.names(),
+            params.pheno.size(),
+            params.pheno.size()),
+        n_ind_(params.numIndividuals()) {}
 
   void compute() override {
     Eigen::MatrixXd phenotypes =
@@ -158,9 +158,9 @@ class SampleEstimatorCovStrategy : public SampleEstimatorStrategy<P> {
 };
 
 template <ProbandType P>
-class SampleEstimatorMateCorStrategy : public SampleEstimatorStrategy<P> {
+class SampleEstimatorSpouseCorStrategy : public SampleEstimatorStrategy<P> {
  public:
-  explicit SampleEstimatorMateCorStrategy(
+  explicit SampleEstimatorSpouseCorStrategy(
       const Params& params,
       const std::string& sample_name,
       const std::filesystem::path& sample_dir,
@@ -169,18 +169,17 @@ class SampleEstimatorMateCorStrategy : public SampleEstimatorStrategy<P> {
             "sample_mate_cor",
             sample_name,
             sample_dir,
-            utils::vectorSuffix(params.pheno.names, "_male"),
-            utils::vectorSuffix(params.pheno.names, "_female"),
-            params.pheno.n_pheno,
-            params.pheno.n_pheno),
+            utils::vectorSuffix(params.pheno.names(), "_male"),
+            utils::vectorSuffix(params.pheno.names(), "_female"),
+            params.pheno.size(),
+            params.pheno.size()),
         n_probands_(n_probands),
-        n_pheno_(params.pheno.n_pheno),
+        n_pheno_(params.pheno.size()),
         std_male_((n_probands_ * kProbandSize<P>) / 2, n_pheno_),
         std_female_((n_probands_ * kProbandSize<P>) / 2, n_pheno_) {
     if constexpr (P == ProbandType::Self) {
-      throw std::runtime_error(
-          "Unsupported proband type Proband::Self for estimator "
-          "SampleMateCor");
+      throw KnoopInvalidArgumentError(
+          "Unsupported proband type 'Self' for estimator SampleSpouseCor");
     }
   }
 
@@ -221,52 +220,56 @@ class SampleEstimatorMateCorStrategy : public SampleEstimatorStrategy<P> {
   Eigen::MatrixXd std_female_;
 };
 
-template <ProbandType P>
-inline SampleEstimator<P> sampleMean() {
-  return SampleEstimator<P>{
-      .name = "sample-mean",
-      .fn = [](const Params& params,
-               std::size_t /*n_probands*/,
-               const std::filesystem::path& sample_dir) {
-        return std::make_unique<SampleEstimatorMeanStrategy<P>>(
-            params, sample_dir.filename().string(), sample_dir);
-      }};
+inline SampleEstimator sampleMean() {
+  return SampleEstimator([]<ProbandType P>() {
+    return SampleEstimatorFor<P>{
+        .name = "sample-mean",
+        .fn = [](const Params& params,
+                 std::size_t /*n_probands*/,
+                 const std::filesystem::path& sample_dir) {
+          return std::make_unique<SampleEstimatorMeanStrategy<P>>(
+              params, sample_dir.filename().string(), sample_dir);
+        }};
+  });
 }
 
-template <ProbandType P>
-inline SampleEstimator<P> sampleVar() {
-  return SampleEstimator<P>{
-      .name = "sample-var",
-      .fn = [](const Params& params,
-               std::size_t /*n_probands*/,
-               const std::filesystem::path& sample_dir) {
-        return std::make_unique<SampleEstimatorVarStrategy<P>>(
-            params, sample_dir.filename().string(), sample_dir);
-      }};
+inline SampleEstimator sampleVar() {
+  return SampleEstimator([]<ProbandType P>() {
+    return SampleEstimatorFor<P>{
+        .name = "sample-var",
+        .fn = [](const Params& params,
+                 std::size_t /*n_probands*/,
+                 const std::filesystem::path& sample_dir) {
+          return std::make_unique<SampleEstimatorVarStrategy<P>>(
+              params, sample_dir.filename().string(), sample_dir);
+        }};
+  });
 }
 
-template <ProbandType P>
-inline SampleEstimator<P> sampleCov() {
-  return SampleEstimator<P>{
-      .name = "sample-cov",
-      .fn = [](const Params& params,
-               std::size_t /*n_probands*/,
-               const std::filesystem::path& sample_dir) {
-        return std::make_unique<SampleEstimatorCovStrategy<P>>(
-            params, sample_dir.filename().string(), sample_dir);
-      }};
+inline SampleEstimator sampleCov() {
+  return SampleEstimator([]<ProbandType P>() {
+    return SampleEstimatorFor<P>{
+        .name = "sample-cov",
+        .fn = [](const Params& params,
+                 std::size_t /*n_probands*/,
+                 const std::filesystem::path& sample_dir) {
+          return std::make_unique<SampleEstimatorCovStrategy<P>>(
+              params, sample_dir.filename().string(), sample_dir);
+        }};
+  });
 }
 
-template <ProbandType P>
-inline SampleEstimator<P> sampleMateCor() {
-  return SampleEstimator<P>{
-      .name = "sample-mate-cor",
-      .fn = [](const Params& params,
-               std::size_t n_probands,
-               const std::filesystem::path& sample_dir) {
-        return std::make_unique<SampleEstimatorMateCorStrategy<P>>(
-            params, sample_dir.filename().string(), sample_dir, n_probands);
-      }};
+inline SampleEstimator sampleSpouseCor() {
+  return SampleEstimator([]<ProbandType P>() {
+    return SampleEstimatorFor<P>{
+        .name = "sample-mate-cor",
+        .fn = [](const Params& params,
+                 std::size_t n_probands,
+                 const std::filesystem::path& sample_dir) {
+          return std::make_unique<SampleEstimatorSpouseCorStrategy<P>>(
+              params, sample_dir.filename().string(), sample_dir, n_probands);
+        }};
+  });
 }
 
 }  // namespace knoop

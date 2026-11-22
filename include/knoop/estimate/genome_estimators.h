@@ -23,6 +23,7 @@
 #include <knoop/estimate/strategy.h>
 
 #include <Eigen/Dense>
+#include <bit>
 
 namespace knoop {
 
@@ -32,7 +33,7 @@ class EstimatorGenotypeFreqStrategy : public PopulationEstimatorStrategy {
  public:
   explicit EstimatorGenotypeFreqStrategy(const Params& params)
       : PopulationEstimatorStrategy(
-            "geno_freq", {"00", "10/01", "11"}, {}, 3, params.geno.n_loc) {}
+            "geno_freq", {"00", "10/01", "11"}, {}, 3, params.geno.numLoci()) {}
 
   void compute(const State& state) override {
     data_ = state.geno().genotypeFreq();
@@ -42,7 +43,8 @@ class EstimatorGenotypeFreqStrategy : public PopulationEstimatorStrategy {
 class EstimatorGenotypeMeanStrategy : public PopulationEstimatorStrategy {
  public:
   explicit EstimatorGenotypeMeanStrategy(const Params& params)
-      : PopulationEstimatorStrategy("geno_mean", {}, {}, params.geno.n_loc) {}
+      : PopulationEstimatorStrategy(
+            "geno_mean", {}, {}, params.geno.numLoci()) {}
 
   void compute(const State& state) override {
     data_ = state.geno().locusMean();
@@ -52,7 +54,8 @@ class EstimatorGenotypeMeanStrategy : public PopulationEstimatorStrategy {
 class EstimatorGenotypeVarStrategy : public PopulationEstimatorStrategy {
  public:
   explicit EstimatorGenotypeVarStrategy(const Params& params)
-      : PopulationEstimatorStrategy("geno_var", {}, {}, params.geno.n_loc) {}
+      : PopulationEstimatorStrategy("geno_var", {}, {}, params.geno.numLoci()) {
+  }
 
   void compute(const State& state) override { data_ = state.geno().locusVar(); }
 };
@@ -60,7 +63,8 @@ class EstimatorGenotypeVarStrategy : public PopulationEstimatorStrategy {
 class EstimatorAlleleFreqStrategy : public PopulationEstimatorStrategy {
  public:
   explicit EstimatorAlleleFreqStrategy(const Params& params)
-      : PopulationEstimatorStrategy("allele_freq", {}, {}, params.geno.n_loc) {}
+      : PopulationEstimatorStrategy(
+            "allele_freq", {}, {}, params.geno.numLoci()) {}
 
   void compute(const State& state) override {
     data_ = state.geno().alleleFreq();
@@ -71,8 +75,8 @@ class EstimatorGenotypeCovStrategy : public PopulationEstimatorStrategy {
  public:
   explicit EstimatorGenotypeCovStrategy(const Params& params)
       : PopulationEstimatorStrategy(
-            "geno_cov", {}, {}, params.geno.n_loc, params.geno.n_loc) {
-    n_loc_ = params.geno.n_loc;
+            "geno_cov", {}, {}, params.geno.numLoci(), params.geno.numLoci()) {
+    n_loc_ = params.geno.numLoci();
   }
 
   void compute(const State& state) override {
@@ -93,15 +97,15 @@ class EstimatorGenotypeCovStrategy : public PopulationEstimatorStrategy {
         for (std::size_t word = 0; word < n_words; ++word)
           if (word == n_words - 1 && (n_ind % 64)) {
             std::uint64_t mask = (1ULL << (n_ind % 64)) - 1ULL;
-            acc += __builtin_popcountll(h01[word] & h02[word] & mask) +
-                   __builtin_popcountll(h01[word] & h12[word] & mask) +
-                   __builtin_popcountll(h11[word] & h02[word] & mask) +
-                   __builtin_popcountll(h11[word] & h12[word] & mask);
+            acc += std::popcount(h01[word] & h02[word] & mask) +
+                   std::popcount(h01[word] & h12[word] & mask) +
+                   std::popcount(h11[word] & h02[word] & mask) +
+                   std::popcount(h11[word] & h12[word] & mask);
           } else {
-            acc += __builtin_popcountll(h01[word] & h02[word]) +
-                   __builtin_popcountll(h01[word] & h12[word]) +
-                   __builtin_popcountll(h11[word] & h02[word]) +
-                   __builtin_popcountll(h11[word] & h12[word]);
+            acc += std::popcount(h01[word] & h02[word]) +
+                   std::popcount(h01[word] & h12[word]) +
+                   std::popcount(h11[word] & h02[word]) +
+                   std::popcount(h11[word] & h12[word]);
           }
 
         data_(loc1, loc2) = ((1.0 / n_ind) * acc) -
@@ -121,8 +125,8 @@ class EstimatorGenotypeCorStrategy : public PopulationEstimatorStrategy {
  public:
   explicit EstimatorGenotypeCorStrategy(const Params& params)
       : PopulationEstimatorStrategy(
-            "geno_cor", {}, {}, params.geno.n_loc, params.geno.n_loc) {
-    n_loc_ = params.geno.n_loc;
+            "geno_cor", {}, {}, params.geno.numLoci(), params.geno.numLoci()) {
+    n_loc_ = params.geno.numLoci();
   }
 
   void compute(const State& state) override {
@@ -141,15 +145,15 @@ class EstimatorGenotypeCorStrategy : public PopulationEstimatorStrategy {
         for (std::size_t word = 0; word < n_words; ++word) {
           if (word == n_words - 1 && (n_ind % 64)) {
             std::uint64_t mask = (1ULL << (n_ind % 64)) - 1ULL;
-            acc += __builtin_popcountll(h01[word] & h02[word] & mask) +
-                   __builtin_popcountll(h01[word] & h12[word] & mask) +
-                   __builtin_popcountll(h11[word] & h02[word] & mask) +
-                   __builtin_popcountll(h11[word] & h12[word] & mask);
+            acc += std::popcount(h01[word] & h02[word] & mask) +
+                   std::popcount(h01[word] & h12[word] & mask) +
+                   std::popcount(h11[word] & h02[word] & mask) +
+                   std::popcount(h11[word] & h12[word] & mask);
           } else {
-            acc += __builtin_popcountll(h01[word] & h02[word]) +
-                   __builtin_popcountll(h01[word] & h12[word]) +
-                   __builtin_popcountll(h11[word] & h02[word]) +
-                   __builtin_popcountll(h11[word] & h12[word]);
+            acc += std::popcount(h01[word] & h02[word]) +
+                   std::popcount(h01[word] & h12[word]) +
+                   std::popcount(h11[word] & h02[word]) +
+                   std::popcount(h11[word] & h12[word]);
           }
         }
 

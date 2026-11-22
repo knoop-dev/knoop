@@ -48,12 +48,12 @@ class SampleEstimatorHasemanElstonStrategy : public SampleEstimatorStrategy<P> {
             std::move(name),
             std::move(sample_name),
             sample_dir,
-            params.pheno.names,
+            params.pheno.names(),
             std::vector<std::string>{"V(G)/Vp"},
-            params.pheno.n_pheno,
+            params.pheno.size(),
             1),
         gcta64_(std::move(process::resolveExecutable("gcta64"))),
-        n_pheno_(params.pheno.n_pheno) {}
+        n_pheno_(params.pheno.size()) {}
 
   void compute() override {
     if (!std::filesystem::exists(this->sample_dir_ / "grm.grm.bin")) {
@@ -144,18 +144,19 @@ class SampleEstimatorHasemanElstonStrategy : public SampleEstimatorStrategy<P> {
   }
 };
 
-template <ProbandType P>
-inline SampleEstimator<P> sampleHasemanElston(
-    std::string name = "haseman-elston") {
-  return SampleEstimator<P>{
-      .name = name,
-      .fn = [name = std::move(name)](
-                const Params& params,
-                std::size_t /*n_probands*/,
-                const std::filesystem::path& sample_dir) {
-        return std::make_unique<SampleEstimatorHasemanElstonStrategy<P>>(
-            params, sample_dir.filename().string(), sample_dir, name);
-      }};
+inline SampleEstimator sampleHasemanElston(
+    const std::string& name = "haseman-elston") {
+  return SampleEstimator([name]<ProbandType P>() {
+    return SampleEstimatorFor<P>{
+        .name = name,
+        .fn = [name = name](
+                  const Params& params,
+                  std::size_t /*n_probands*/,
+                  const std::filesystem::path& sample_dir) {
+          return std::make_unique<SampleEstimatorHasemanElstonStrategy<P>>(
+              params, sample_dir.filename().string(), sample_dir, name);
+        }};
+  });
 }
 
 }  // namespace knoop

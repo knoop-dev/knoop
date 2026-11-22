@@ -39,19 +39,19 @@ class EstimatorSiblingCovStrategy : public PopulationEstimatorStrategy {
       const Params& params, Component type, bool scale = false)
       : type_(type),
         scale_(scale),
-        n_ind_(params.global.n_ind),
-        n_pheno_(params.pheno.n_pheno),
-        self_(params.global.n_ind, params.pheno.n_pheno),
-        sibling_(params.global.n_ind, params.pheno.n_pheno),
+        n_ind_(params.numIndividuals()),
+        n_pheno_(params.pheno.size()),
+        self_(params.numIndividuals(), params.pheno.size()),
+        sibling_(params.numIndividuals(), params.pheno.size()),
         PopulationEstimatorStrategy(
             std::format(
                 "sibling_{}_{}",
                 componentToString(type),
                 scale ? "cor" : "cov"),
-            utils::vectorPrefix(params.pheno.names, "self_"),
-            utils::vectorPrefix(params.pheno.names, "sibling_"),
-            params.pheno.n_pheno,
-            params.pheno.n_pheno) {}
+            utils::vectorPrefix(params.pheno.names(), "self_"),
+            utils::vectorPrefix(params.pheno.names(), "sibling_"),
+            params.pheno.size(),
+            params.pheno.size()) {}
 
   void compute(const State& state) override {
     std::vector<std::vector<Individual>> siblings =
@@ -90,31 +90,32 @@ class EstimatorCousinCovStrategy : public PopulationEstimatorStrategy {
       : type_(type),
         scale_(scale),
         degree_(degree),
-        n_ind_(params.global.n_ind),
-        n_pheno_(params.pheno.n_pheno),
+        n_ind_(params.numIndividuals()),
+        n_pheno_(params.pheno.size()),
         self_(
-            params.global.n_ind * (1ULL << (2 * degree)), params.pheno.n_pheno),
+            params.numIndividuals() * (1ULL << (2 * degree)),
+            params.pheno.size()),
         cousin_(
-            params.global.n_ind * (1ULL << (2 * degree)), params.pheno.n_pheno),
+            params.numIndividuals() * (1ULL << (2 * degree)),
+            params.pheno.size()),
         PopulationEstimatorStrategy(
             std::format(
                 "cousin_{}_{}_{}",
                 degree,
                 componentToString(type),
                 scale ? "cor" : "cov"),
-            utils::vectorPrefix(params.pheno.names, "self_"),
-            utils::vectorPrefix(params.pheno.names, "cousin_"),
-            params.pheno.n_pheno,
-            params.pheno.n_pheno) {
-    if (params.global.pedigree_max_depth < degree_ + 1) {
-      throw std::invalid_argument(
-          std::format(
-              "Pedigree depth {} is insufficient to compute cousin "
-              "covariance of degree {}; --pedigree-max-depth must be at least "
-              "{}",
-              params.global.pedigree_max_depth,
-              degree_,
-              degree_ + 1));
+            utils::vectorPrefix(params.pheno.names(), "self_"),
+            utils::vectorPrefix(params.pheno.names(), "cousin_"),
+            params.pheno.size(),
+            params.pheno.size()) {
+    if (params.pedigreeMaxDepth() < degree_ + 1) {
+      throw KnoopPedigreeError(
+          "Pedigree depth {} is insufficient to compute cousin "
+          "covariance of degree {}; --pedigree-max-depth must be at least "
+          "{}",
+          params.pedigreeMaxDepth(),
+          degree_,
+          degree_ + 1);
     }
   }
 
@@ -163,10 +164,11 @@ class EstimatorAncestorCovStrategy : public PopulationEstimatorStrategy {
       : type_(type),
         degree_(degree),
         scale_(scale),
-        n_ind_(params.global.n_ind),
-        n_pheno_(params.pheno.n_pheno),
-        self_(params.global.n_ind * (1ULL << degree), params.pheno.n_pheno),
-        ancestor_(params.global.n_ind * (1ULL << degree), params.pheno.n_pheno),
+        n_ind_(params.numIndividuals()),
+        n_pheno_(params.pheno.size()),
+        self_(params.numIndividuals() * (1ULL << degree), params.pheno.size()),
+        ancestor_(
+            params.numIndividuals() * (1ULL << degree), params.pheno.size()),
         PopulationEstimatorStrategy(
             std::format(
                 "ancestor_{}_{}_{}",
@@ -184,9 +186,6 @@ class EstimatorAncestorCovStrategy : public PopulationEstimatorStrategy {
           params.pedigreeMaxDepth(),
           degree_,
           degree_);
-            utils::vectorPrefix(params.pheno.names, "self_"),
-            utils::vectorPrefix(params.pheno.names, "ancestor_"),
-            params.pheno.n_pheno,
     }
   }
 
@@ -198,8 +197,7 @@ class EstimatorAncestorCovStrategy : public PopulationEstimatorStrategy {
     if (history_.size() < degree_ + 1 || state.pedigree.size() < degree_ + 1) {
       Log::debug(
           "Setting ancestral covariance estimator of degree {} to NaN in "
-          "generation {}; pedigree "
-          "size {}, max depth {}; history size {}",
+          "generation {}; pedigree size {}, max depth {}; history size {}",
           degree_,
           state.gen,
           state.pedigree.size(),

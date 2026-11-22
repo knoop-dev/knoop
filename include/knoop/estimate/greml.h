@@ -48,13 +48,13 @@ class SampleEstimatorGREMLStrategy : public SampleEstimatorStrategy<P> {
             std::move(name),
             std::move(sample_name),
             sample_dir,
-            params.pheno.names,
+            params.pheno.names(),
             {"V(G)", "V(E)", "V(G)/[V(G) + V(E)]"},
-            params.pheno.n_pheno,
+            params.pheno.size(),
             3),
         gcta64_(std::move(process::resolveExecutable("gcta64"))),
-        n_pheno_(params.pheno.n_pheno),
-        pheno_names_(params.pheno.names) {}
+        n_pheno_(params.pheno.size()),
+        pheno_names_(params.pheno.names()) {}
 
   void compute() override {
     if (!std::filesystem::exists(this->sample_dir_ / "grm.grm.bin")) {
@@ -137,17 +137,18 @@ class SampleEstimatorGREMLStrategy : public SampleEstimatorStrategy<P> {
   }
 };
 
-template <ProbandType P>
-inline SampleEstimator<P> sampleGREML(std::string name = "greml") {
-  return SampleEstimator<P>{
-      .name = name,
-      .fn = [name = std::move(name)](
-                const Params& params,
-                std::size_t /*n_probands*/,
-                const std::filesystem::path& sample_dir) {
-        return std::make_unique<SampleEstimatorGREMLStrategy<P>>(
-            params, sample_dir.filename().string(), sample_dir, name);
-      }};
+inline SampleEstimator sampleGREML(const std::string& name = "greml") {
+  return SampleEstimator([name]<ProbandType P>() {
+    return SampleEstimatorFor<P>{
+        .name = name,
+        .fn = [name = name](
+                  const Params& params,
+                  std::size_t /*n_probands*/,
+                  const std::filesystem::path& sample_dir) {
+          return std::make_unique<SampleEstimatorGREMLStrategy<P>>(
+              params, sample_dir.filename().string(), sample_dir, name);
+        }};
+  });
 }
 
 }  // namespace knoop

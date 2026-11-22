@@ -41,22 +41,17 @@ inline std::uint64_t sumMod2(std::uint64_t par) {
 
 }  // namespace details
 
-class UpdateGenome {
+class Inherit {
  public:
-  explicit UpdateGenome(const Params& params)
-      : n_loc_(params.geno.n_loc),
-        n_ind_(params.global.n_ind),
+  explicit Inherit(const Params& params)
+      : n_loc_(params.geno.numLoci()),
+        n_ind_(params.numIndividuals()),
         n_sex_(n_ind_ / 2),
         thr_rec_(((n_loc_ + 63) / 64) * 64),
-        random_seed_(
-            params.global.post_init_seed.value_or(params.global.random_seed)),
-        max_mut_(params.geno.locus_mut.maxCoeff()),
-        mut_gap_(
-            (params.geno.locus_mut.maxCoeff() > 0)
-                ? std::optional<random::Geometric>{random::Geometric(max_mut_)}
-                : std::nullopt) {
-    random::probsToThreshold(params.geno.locus_rec, thr_rec_.data());
-    generateMutationAcceptMap(params.geno.locus_mut);
+        random_seed_(params.postInitSeed().value_or(params.randomSeed())),
+        max_mut_(params.geno.locusMutation().maxCoeff()) {
+    random::probsToThreshold(params.geno.locusRecombination(), thr_rec_.data());
+    generateMutationAcceptMap(params.geno.locusMutation());
   };
 
   void operator()(State& state);
@@ -72,7 +67,6 @@ class UpdateGenome {
   const std::uint64_t random_seed_;
 
   const double max_mut_;
-  std::optional<random::Geometric> mut_gap_;
   std::vector<double> mut_accept_;
 
   void generateMutationAcceptMap(const Eigen::VectorXd& loc_mut);
@@ -99,8 +93,7 @@ class UpdateGenome {
   void updateGenome(State& state);
 };
 
-inline void UpdateGenome::generateMutationAcceptMap(
-    const Eigen::VectorXd& loc_mut) {
+inline void Inherit::generateMutationAcceptMap(const Eigen::VectorXd& loc_mut) {
   if (loc_mut.isConstant(max_mut_, 0)) return;
 
   mut_accept_.resize(n_loc_);
@@ -108,7 +101,7 @@ inline void UpdateGenome::generateMutationAcceptMap(
     mut_accept_[loc] = loc_mut[loc] / max_mut_;
 }
 
-inline std::uint64_t UpdateGenome::recombine(
+inline std::uint64_t Inherit::recombine(
     boost::random::xoshiro256pp& engine,
     std::uint64_t paternal,
     std::uint64_t maternal,
@@ -123,21 +116,22 @@ inline std::uint64_t UpdateGenome::recombine(
   return ((recomb_mask & paternal) | (~recomb_mask & maternal));
 }
 
-inline void UpdateGenome::mutate(
+inline void Inherit::mutate(
     boost::random::xoshiro256pp& engine,
     HaplotypeBuffer& hap,
     std::size_t ind) {
-  if (!mut_gap_.has_value()) return;
+  if (max_mut_ == 0) return;
 
-  for (std::size_t loc = mut_gap_->sample(engine); loc < n_loc_;
-       loc += 1 + mut_gap_->sample(engine)) {
-    double rand = random::Uniform::sample(engine);
+  for (std::size_t loc = random::Geometric::sample(engine, max_mut_);
+       loc < n_loc_;
+       loc += 1 + random::Geometric::sample(engine, max_mut_)) {
+    double rand = random::Uniform::draw(engine);
     if (mut_accept_.empty() || rand < mut_accept_[loc])
       hap(ind, loc / kNumPerWord) ^= 1ULL << (loc % kNumPerWord);
   }
 }
 
-inline void UpdateGenome::generateOffspringHaplotypes(
+inline void Inherit::generateOffspringHaplotypes(
     boost::random::xoshiro256pp& engine,
     State& state,
     const Individual& father,
@@ -212,7 +206,7 @@ inline void UpdateGenome::generateOffspringHaplotypes(
   mutate(engine, h1_off, mother.index);
 }
 
-inline void UpdateGenome::operator()(State& state) {
+inline void Inherit::operator()(State& state) {
   if (state.geno().view() != BufferLayout::IndividualMajor)
     throw KnoopBufferLayoutError("update genome requires ind-major view");
 

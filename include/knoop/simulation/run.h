@@ -20,8 +20,8 @@
 #include <knoop/core.h>
 #include <knoop/estimate.h>
 #include <knoop/init.h>
-#include <knoop/sample.h>
 #include <knoop/mutate.h>
+#include <knoop/sample.h>
 #include <omp.h>
 
 #include <chrono>
@@ -36,14 +36,11 @@ inline std::uint64_t shuffleSeed(std::uint64_t rng_seed, std::size_t rep_id) {
   return rng_seed + (kSeedStride * rep_id);
 }
 
-inline Params preprocessSimulation(const SimulationSpec& spec) {
+inline void preprocessSimulation(Params& params) {
   Log::info("Preprocessing simulation");
 
-  Params params = buildParams(spec);
-  InducePleiotropy opt(params);
-  opt();
-
-  return params;
+  InducePleiotropy pleiotropy(params);
+  pleiotropy();
 }
 
 inline std::filesystem::path outputSetup(std::uint64_t seed) {
@@ -56,122 +53,26 @@ inline std::filesystem::path outputSetup(std::uint64_t seed) {
   return tmp;
 }
 
-inline std::string resultsFilename(const SimulationSpec& spec) {
-  return spec.output_name.has_value()
-             ? std::format("results_{}.h5", spec.output_name.value())
+inline std::string resultsFilename(const Params& params) {
+  return params.outputName().has_value()
+             ? std::format("results_{}.h5", params.outputName().value())
              : "results.h5";
 }
 
-inline std::string logFilename(const SimulationSpec& spec) {
-  return spec.output_name.has_value()
-             ? std::format("knoop_{}.log", spec.output_name.value())
+inline std::string logFilename(const Params& params) {
+  return params.outputName().has_value()
+             ? std::format("knoop_{}.log", params.outputName().value())
              : "knoop.log";
 }
 
-inline void logSetup(const SimulationSpec& spec) {
-  if (spec.log_to_file) {
-    std::filesystem::path log_path = spec.output_dir / logFilename(spec);
-    Log::file(log_path, spec.log_level);
+inline void logSetup(const Params& params) {
+  if (params.logToFile()) {
+    std::filesystem::path log_path =
+        params.outputDirectory() / logFilename(params);
+    Log::file(log_path, params.logLevel());
   } else {
-    Log::stream(std::cout, spec.log_level);
+    Log::stream(std::cout, params.logLevel());
   }
-}
-
-inline std::string describeGenomeParam(
-    const std::variant<double, File<Eigen::MatrixXd>, Distribution>& v) {
-  if (std::holds_alternative<double>(v))
-    return std::format("constant({})", std::get<double>(v));
-  if (std::holds_alternative<Distribution>(v))
-    return std::format("distribution({})", std::get<Distribution>(v).name);
-  return std::format(
-      "file({})", std::get<File<Eigen::MatrixXd>>(v).path.string());
-}
-
-inline std::string describeMatrixParam(
-    const std::optional<std::variant<File<Eigen::MatrixXd>, Eigen::MatrixXd>>&
-        v) {
-  if (!v.has_value()) return "default";
-  if (std::holds_alternative<Eigen::MatrixXd>(v.value())) {
-    const auto& m = std::get<Eigen::MatrixXd>(v.value());
-    return std::format("inline matrix ({}x{})", m.rows(), m.cols());
-  }
-  return std::format(
-      "file({})", std::get<File<Eigen::MatrixXd>>(v.value()).path.string());
-}
-
-inline void logSimulationSpec(const SimulationSpec& spec) {
-  Log::debug("Starting simulation with config:");
-  Log::debug(" n_individuals={}", spec.n_individuals);
-  Log::debug(" n_generations={}", spec.n_generations);
-  Log::debug(" n_replicates={}", spec.n_replicates);
-  Log::debug(" n_threads={}", spec.n_threads);
-  Log::debug(
-      " random_seed={}",
-      spec.random_seed.has_value() ? std::to_string(spec.random_seed.value())
-                                   : std::string("none (random)"));
-  Log::debug(" share_init_state={}", spec.share_init_state);
-  Log::debug(
-      " pedigree_warmup={}, pedigree_max_depth={}",
-      spec.pedigree_warmup,
-      spec.pedigree_max_depth);
-  Log::debug(" output_dir={}", spec.output_dir.string());
-  Log::debug(" output_name={}", spec.output_name.value_or("(default)"));
-  Log::debug(
-      " log_level={}, log_to_file={}",
-      logLevelToString(spec.log_level),
-      spec.log_to_file);
-
-  Log::debug(" genome.n_loci={}", spec.genome.n_loci);
-  Log::debug(
-      " genome.locus_freq={}", describeGenomeParam(spec.genome.locus_freq));
-  Log::debug(
-      " genome.locus_rec={}", describeGenomeParam(spec.genome.locus_rec));
-  Log::debug(
-      " genome.locus_mut={}", describeGenomeParam(spec.genome.locus_mut));
-
-  Log::debug(" mating.type={}", spec.mating.type);
-  Log::debug(" mating.tolerance={}", spec.mating.tolerance);
-  Log::debug(" mating.max_iterations={}", spec.mating.max_iterations);
-  Log::debug(" mating.initial_temperature={}", spec.mating.initial_temperature);
-  Log::debug(" mating.temperature_decay={}", spec.mating.temperature_decay);
-  Log::debug(" mating.mate_cor={}", describeMatrixParam(spec.mating.mate_cor));
-
-  Log::debug(
-      " genetic_component_cor={}",
-      describeMatrixParam(spec.genetic_component_cor));
-  Log::debug(
-      " environmental_component_cor={}",
-      describeMatrixParam(spec.environmental_component_cor));
-
-  Log::debug(" phenotypes ({} total):", spec.phenotypes.size());
-  for (const auto& pheno : spec.phenotypes) {
-    Log::debug(
-        "  {}: n_causal_loci={}, var_genetic={}, var_environmental={}, "
-        "var_vertical={}",
-        pheno.name,
-        pheno.n_causal_loci,
-        pheno.var_genetic,
-        pheno.var_environmental,
-        pheno.var_vertical);
-  }
-
-  Log::debug(" population estimators ({} total):", spec.estimators.size());
-  for (const auto& est : spec.estimators) Log::debug("    {}", est.name);
-
-  Log::debug(" sample specs ({} total):", spec.sample_spec.size());
-  for (const auto& sample : spec.sample_spec) {
-    Log::debug(
-        "  {}: proband_type={}, n_probands={}, estimators=[{}]",
-        sample.name,
-        sample.proband_type,
-        sample.n_probands,
-        boost::algorithm::join(sample.estimators, ", "));
-  }
-
-  Log::debug(
-      " sample estimator specs ({} total):", spec.sample_estimator_spec.size());
-  for (const auto& est : spec.sample_estimator_spec)
-    Log::debug("    {} (type={})", est.name, est.type);
 }
 
 inline std::filesystem::path replicateSetup(
@@ -179,74 +80,77 @@ inline std::filesystem::path replicateSetup(
   return tmp_dir / std::format("rep_{:03}", rep_id + 1);
 }
 
-inline void writerSetup(const SimulationSpec& spec) {
-  std::filesystem::path results_path = spec.output_dir / resultsFilename(spec);
-  std::size_t offset = spec.pedigree_warmup ? spec.pedigree_max_depth : 1;
+inline void writerSetup(const Params& params) {
+  std::filesystem::path results_path =
+      params.outputDirectory() / resultsFilename(params);
   HDF5Writer::getInstance(
-      results_path, spec.n_generations, spec.n_replicates, offset);
+      results_path, params.numGenerations(), params.numReplicates());
 }
+
 }  // namespace details
 
 inline void runReplicate(const Params& params) {
   boost::random::xoshiro256pp& engine = random::Xoshiro256pp::getInstance();
-  random::Xoshiro256pp::setSeed(engine, params.global.random_seed);
+  random::Xoshiro256pp::setSeed(engine, params.randomSeed());
 
-  if (!std::filesystem::exists(params.global.out_dir))
-    std::filesystem::create_directory(params.global.out_dir);
+  if (!std::filesystem::exists(params.outputDirectory()))
+    std::filesystem::create_directory(params.outputDirectory());
 
   State state = buildState(params);
 
   ComputePopulationEstimates population_est(params);
   ComputeSampleEstimates sample_est(params);
-
   GenerateHaplotypes haplo(params);
   RandomMating founder_mate(params);
   ScorePhenotypes score(params);
   AssortativeMating mate(params);
-  UpdateGenome update(params);
+  Inherit update(params);
 
   // initial state generation
   haplo(state);
   state.geno().computeLocusStats();
 
   // if pedigree_warmup is true, then we simulate pedigree_max_depth
-  // panmictic generations
+  // founder generations, otherwise just the one
   std::size_t n_it =
-      params.global.pedigree_warmup ? params.global.pedigree_max_depth : 1;
+      params.pedigreeWarmup() ? params.pedigreeMaxDepth() : 1;
 
   for (std::size_t it = 0; it < n_it; ++it) {
-    Log::info("Simulating panmictic generation {}", it + 1);
+    Log::info("Simulating founder generation {}", it + 1);
     state.geno().computeLocusStats();
     score(state);
     state.pheno().computeStats();
     founder_mate(state);
     state.updatePedigree();
-    if (it > 0) population_est(state);
+    if (it == n_it - 1) {
+      state.gen = 0;
+      population_est(state);
+      sample_est(state);
+    }
     state.transpose();
     update(state);
     state.transpose();
     state.advance();
   }
 
-  std::size_t gen_offset = state.gen;
-
   Log::info("Finished simulating founder generation(s)");
 
-  if (params.global.post_init_seed.has_value()) {
-    random::Xoshiro256pp::setSeed(params.global.post_init_seed);
+  if (params.postInitSeed().has_value()) {
+    random::Xoshiro256pp::setSeed(params.postInitSeed());
     Log::debug(
         "Setting post init seed from shared state to {}",
-        params.global.post_init_seed.value());
+        params.postInitSeed().value());
   }
 
   HDF5Writer::create(
-      mate.objective(),
       "mate-objective",
-      utils::vectorPrefix(params.pheno.names, "male_"),
-      utils::vectorPrefix(params.pheno.names, "female_"));
+      utils::vectorPrefix(params.pheno.names(), "male_"),
+      utils::vectorPrefix(params.pheno.names(), "female_"),
+      params.pheno.size(),
+      params.pheno.size());
 
   // run the core simulation loop
-  while (state.gen <= gen_offset + params.global.n_gens) {
+  while (state.gen < params.numGenerations()) {
     Log::info("Simulating generation {}", state.gen);
     state.geno().computeLocusStats();
 
@@ -255,7 +159,11 @@ inline void runReplicate(const Params& params) {
     state.pheno().computeStats();
 
     // match mates
-    mate(state);
+    if (params.mate.type() == MatingType::Assortative)
+      mate(state);
+    else
+      founder_mate(state);
+
     state.updatePedigree();
 
     HDF5Writer::write(mate.objective(), "mate-objective", state.rep, state.gen);
@@ -275,26 +183,25 @@ inline void runReplicate(const Params& params) {
   }
 }
 
-inline void runSimulation(const SimulationSpec& spec) {
+inline void runSimulation(Params& params) {
   // configure OpenMP
-  if (spec.n_workers > 1 && spec.n_threads_per_worker > 1)
+  if (params.numWorkers() > 1 && params.numThreadsPerWorker() > 1)
     omp_set_max_active_levels(2);
 
   // set up the log
-  details::logSetup(spec);
-  details::logSimulationSpec(spec);
+  details::logSetup(params);
 
   // set up random seed
-  std::uint64_t seed = random::Xoshiro256pp::setSeed(spec.random_seed);
+  std::uint64_t seed = random::Xoshiro256pp::setSeed(params.randomSeed());
 
-  // preprocess parameters
-  Params params = details::preprocessSimulation(spec);
-  params.global.random_seed = seed;
+  /** preprocess */
+  details::preprocessSimulation(params);
+  params.randomSeed() = seed;
 
   // validate output directory
-  if (!std::filesystem::exists(spec.output_dir)) {
+  if (!std::filesystem::exists(params.outputDirectory())) {
     try {
-      std::filesystem::create_directory(spec.output_dir);
+      std::filesystem::create_directory(params.outputDirectory());
     } catch (std::exception& e) {
       Log::debug("Could not create output directory: {}", e.what());
       exit(EXIT_FAILURE);
@@ -305,28 +212,30 @@ inline void runSimulation(const SimulationSpec& spec) {
   std::filesystem::path tmp_dir = details::outputSetup(seed);
 
   // setup the HDF5 writer instance
-  details::writerSetup(spec);
+  details::writerSetup(params);
   HDF5Writer::getInstance().writeParams(params);
 
-#pragma omp parallel for num_threads(spec.n_workers) schedule(dynamic, 1)
-  for (std::size_t rep_id = 0; rep_id < spec.n_replicates; ++rep_id) {
+#pragma omp parallel for num_threads(params.numWorkers()) schedule(dynamic, 1)
+  for (std::size_t rep_id = 0; rep_id < params.numReplicates(); ++rep_id) {
     // number of threads used by each worker
-    omp_set_num_threads(spec.n_threads_per_worker);
+    omp_set_num_threads(params.numThreadsPerWorker());
 
     Params rep_params = params;
-    rep_params.global.out_dir = details::replicateSetup(tmp_dir, rep_id);
-    if (spec.share_init_state) {
-      rep_params.global.random_seed = seed;
-      rep_params.global.post_init_seed = details::shuffleSeed(seed, rep_id);
+    rep_params.outputDirectory() = details::replicateSetup(tmp_dir, rep_id);
+    if (params.shareInitState()) {
+      rep_params.randomSeed() = seed;
+      rep_params.postInitSeed() = details::shuffleSeed(seed, rep_id);
     } else {
-      rep_params.global.random_seed = details::shuffleSeed(seed, rep_id);
+      rep_params.randomSeed() = details::shuffleSeed(seed, rep_id);
     }
-    rep_params.global.rep_id = rep_id;
+    rep_params.replicateId() = rep_id;
 
     runReplicate(rep_params);
   }
 
-  if (spec.delete_tmp) std::filesystem::remove_all(tmp_dir);
+  if (params.deleteTemporaries()) std::filesystem::remove_all(tmp_dir);
+
+  HDF5Writer::shutdown();
 }
 
 }  // namespace knoop

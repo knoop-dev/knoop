@@ -43,7 +43,7 @@ class RandomMating {
  public:
   explicit RandomMating(const Params& params)
       : eng_(random::Xoshiro256pp::getInstance()),
-        n_sex_(params.global.n_ind / 2),
+        n_sex_(params.numIndividuals() / 2),
         match_cur_(n_sex_) {}
 
   void operator()(State& state);
@@ -80,31 +80,67 @@ class AssortativeMating {
   AssortativeMating(AssortativeMating&&) = delete;
   AssortativeMating& operator=(const AssortativeMating&) = delete;
   AssortativeMating& operator=(AssortativeMating&&) = delete;
+
   explicit AssortativeMating(const Params& params)
-      : n_sex_(params.global.n_ind / 2),
-        n_pheno_(params.pheno.n_pheno),
-        std_male_(params.global.n_ind, params.pheno.n_pheno),
-        std_female_(params.global.n_ind, params.pheno.n_pheno),
-        mate_cor_(params.mate.mate_cor),
-        objective_(params.mate.mate_cor),
-        exact_(params.mate.exact),
+      : match_(params.mate.type() == MatingType::Assortative),
+        n_sex_(params.numIndividuals() / 2),
+        n_pheno_(params.pheno.size()),
+        wtd_male_(params.numIndividuals(), params.pheno.size()),
+        wtd_female_(params.numIndividuals(), params.pheno.size()),
+        mate_cor_(params.mate.spouseCorrelation()),
+        objective_(params.mate.spouseCorrelation()),
+        exact_(params.mate.exactObjective()),
+        whiten_(params.mate.whiten()),
         engine_(random::Xoshiro256pp::getInstance()),
         match_cur_(n_sex_),
         max_itr_(
-            params.mate.max_itr == 0
-                ? std::max<std::size_t>(10 * params.global.n_ind, 100000)
-                : params.mate.max_itr),
-        temp_init_(params.mate.temp_init),
-        temp_decay_(params.mate.temp_decay),
-        tol_inf_(params.mate.tol / std::sqrt(n_sex_)),
+            params.mate.maxIterations() == 0
+                ? std::max<std::size_t>(10 * params.numIndividuals(), 100000)
+                : params.mate.maxIterations()),
+        temp_init_(params.mate.temperatureInit()),
+        temp_decay_(params.mate.temperatureDecay()),
+        tol_inf_(params.mate.tolerance() / std::sqrt(n_sex_)),
         stall_window_(n_sex_),
         log_interval_(std::max<std::size_t>(max_itr_ / 1000, 1)) {
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(mate_cor_);
+    /**
+     * If there are no phenotypes being simulated, or the objective spousal
+     * correlation matrix is empty, then we should not induce any assortment, so
+     * just quit
+     */
+    if (n_pheno_ == 0 || mate_cor_.size() == 0) {
+      match_ = false;
+      return;
+    }
 
-    if (svd.singularValues()(0) > 1)
-      throw std::invalid_argument(
-          "AssortativeMating: invalid spouse correlation matrix specified; "
-          "singular value(s) exceed one");
+    /**
+     * If we are going to be matching, then currently it is required that the
+     * matrix is of full-dimension. This should be reworked so that a select few
+     * traits can be selected in the near future.
+     */
+    if (match_) {
+      if (mate_cor_.rows() != n_pheno_ || mate_cor_.rows() != mate_cor_.cols())
+        throw KnoopDimensionError(
+            "Cross-correlation matrix must be symmetric with dimensions {} "
+            "(got n_rows: {}, n_cols: {})",
+            n_pheno_,
+            mate_cor_.rows(),
+            mate_cor_.cols());
+
+      /**
+       * Feasibility check; singular values must not exceed one since they are
+       * the correlations between canonical axes of phenotypes
+       */
+      Eigen::JacobiSVD<Eigen::MatrixXd> svd(mate_cor_);
+
+      if (svd.info() != Eigen::Success)
+        throw KnoopNumericalError(
+            "Singular value decomposition of spouse correlation failed");
+
+      if (svd.singularValues()(0) > 1)
+        throw KnoopInfeasibleSpouseCorrelationError(
+            "Invalid spouse correlation matrix specified; singular value(s) "
+            "exceed one");
+    }
   };
 
   void operator()(State& state);
@@ -139,6 +175,7 @@ class AssortativeMating {
   std::size_t numIterations() const { return n_itr_; };
 
  private:
+  bool match_;
   std::size_t n_sex_;
   std::size_t n_pheno_;
   RowMatrixXd wtd_male_;
@@ -146,6 +183,7 @@ class AssortativeMating {
   Eigen::MatrixXd mate_cor_;
   Eigen::MatrixXd objective_;
   bool exact_;
+  bool whiten_;
 
   boost::random::xoshiro256pp& engine_;
 
@@ -222,6 +260,8 @@ class AssortativeMating {
 };
 
 inline void AssortativeMating::generateObjective() {
+  static random::Normal normal(0, 1);
+
   double n_inv = 1.0 / n_sex_;
 
   Eigen::MatrixXd male_cor = n_inv * wtd_male_.transpose() * wtd_male_;
@@ -258,8 +298,8 @@ inline void AssortativeMating::generateObjective() {
   }
 
   Log::warning(
-      "AssortativeMating: unable to draw feasible mate correlation matrix "
-      "after 8 tries; falling back to mate_cor");
+      "Unable to draw feasible mate correlation matrix after 8 tries; falling "
+      "back to mate_cor");
 
   objective_ = mate_cor_;
 }
@@ -290,10 +330,13 @@ inline void AssortativeMating::computeCor() {
 }
 
 inline void AssortativeMating::proposeState() {
-  id_swap_l_ = random::UniformInt::sample(engine_, 0, n_sex_);
-  id_swap_r_ = random::UniformInt::sample(engine_, 0, n_sex_);
+  id_swap_l_ =
+      random::UniformInt::sample(engine_, static_cast<std::size_t>(0), n_sex_);
+  id_swap_r_ =
+      random::UniformInt::sample(engine_, static_cast<std::size_t>(0), n_sex_);
   while (id_swap_l_ == id_swap_r_)
-    id_swap_r_ = random::UniformInt::sample(engine_, 0, n_sex_);
+    id_swap_r_ = random::UniformInt::sample(
+        engine_, static_cast<std::size_t>(0), n_sex_);
 
   diff_male_ =
       (wtd_male_.row(id_swap_l_) - wtd_male_.row(id_swap_r_)).transpose();
@@ -312,7 +355,7 @@ inline void AssortativeMating::proposeState() {
 inline void AssortativeMating::updateState() {
   // compute acceptance probability
   double acc_prob = std::min(1.0, std::exp(-alpha_cur_ / temp_cur_));
-  double u = random::Uniform::sample(engine_);
+  double u = random::Uniform::draw(engine_);
 
   // accept / reject
   accept_cur_ = u < acc_prob;
@@ -412,15 +455,6 @@ inline void AssortativeMating::operator()(State& state) {
 
     if (itr % log_interval_ == 0) {
       if (diagnostics_) recordDiagnostics(itr);
-          "AssortativeMating: iteration {}, error l2 {:.3g} (optimal "
-          "{:.3g}), error linfty {:.3g} (optimal {:.3g}), temperature "
-          "{:.3g}",
-          itr,
-          err_l2_cur_,
-          err_l2_opt_,
-          err_linf_cur_,
-          err_linf_opt_,
-          temp_cur_);
     }
 
     // tested on the current state, since that is the matching we return when
