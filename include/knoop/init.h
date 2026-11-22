@@ -19,4 +19,3 @@
 
 #include <knoop/init/founders.h>
 #include <knoop/init/pleiotropy.h>
-#include <knoop/init/setup.h>
