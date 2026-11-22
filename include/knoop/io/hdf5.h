@@ -36,6 +36,52 @@ namespace knoop {
 using Job = std::function<void()>;
 
 class HDF5Writer {
+ private:
+  explicit HDF5Writer(
+      const std::filesystem::path& results_path,
+      std::size_t n_gens,
+      std::size_t n_reps)
+      : path_(results_path),
+        file_(results_path, HighFive::File::Overwrite),
+        n_gens_(n_gens),
+        n_reps_(n_reps) {
+    thread_ = std::thread(&HDF5Writer::threadCallback, this);
+    file_.createGroup("params");
+    file_.createGroup("raw");
+    file_.createGroup("summary");
+  }
+
+  void createEstimator(
+      const std::string& name,
+      const std::vector<std::string>& row_labels,
+      const std::vector<std::string>& col_labels,
+      std::size_t n_rows,
+      std::size_t n_cols);
+
+  void writeEstimator(
+      const Eigen::MatrixXd& data,
+      const std::string& name,
+      std::size_t rep,
+      std::size_t gen);
+
+  void summarise();
+
+  static std::unique_ptr<HDF5Writer> instance_;
+
+  std::filesystem::path path_;
+  HighFive::File file_;
+  std::size_t n_gens_;
+  std::size_t n_reps_;
+
+  std::unordered_set<std::string> datasets_;
+  std::deque<Job> jobs_;
+  std::condition_variable cv_;
+  std::thread thread_;
+  std::mutex mutex_;
+  bool done_ = false;
+
+  void threadCallback();
+
  public:
   HDF5Writer(const HDF5Writer&) = delete;
   HDF5Writer& operator=(const HDF5Writer&) = delete;
@@ -43,31 +89,44 @@ class HDF5Writer {
   static HDF5Writer& getInstance(
       const std::filesystem::path& results_path,
       std::size_t n_gens,
-      std::size_t n_reps,
-      std::size_t offset = 0) {
-    static HDF5Writer instance(results_path, n_gens, n_reps, offset);
-    instance_ = &instance;
+      std::size_t n_reps) {
+    /**
+     * If the writer has already been instantiated AND it points to the file
+     * path that the call asks for, return it
+     */
+    if (instance_ && instance_->path_ == results_path) return *instance_;
+
+    /**
+     * If no writer has been set up, create a new one
+     */
+    instance_ = std::unique_ptr<HDF5Writer>(
+        new HDF5Writer(results_path, n_gens, n_reps));
+
     return *instance_;
   }
 
   static HDF5Writer& getInstance() {
-    if (instance_ == nullptr)
-      throw std::runtime_error("Must initialise Writer before calling");
+    if (!instance_)
+      throw KnoopGenericError("Must initialise Writer before calling");
     return *instance_;
   }
 
+  static void shutdown() { instance_.reset(); }
+
   void writeParams(const Params& params);
 
-  template <typename T>
   static void create(
-      T&& data,
       const std::string& name,
       const std::vector<std::string>& row_labels,
-      const std::vector<std::string>& col_labels);
+      const std::vector<std::string>& col_labels,
+      std::size_t n_rows,
+      std::size_t n_cols = 1);
 
-  template <typename T>
   static void write(
-      T&& data, const std::string& name, std::size_t rep, std::size_t gen);
+      const Eigen::MatrixXd& data,
+      const std::string& name,
+      std::size_t rep,
+      std::size_t gen);
 
   ~HDF5Writer() {
     {
@@ -79,52 +138,9 @@ class HDF5Writer {
 
     summarise();
   }
-
- private:
-  explicit HDF5Writer(
-      const std::filesystem::path& results_path,
-      std::size_t n_gens,
-      std::size_t n_reps,
-      std::size_t offset = 0)
-      : file_(results_path, HighFive::File::Overwrite),
-        n_gens_(n_gens),
-        n_reps_(n_reps),
-        offset_(offset) {
-    thread_ = std::thread(&HDF5Writer::threadCallback, this);
-    file_.createGroup("params");
-    file_.createGroup("raw");
-    file_.createGroup("summary");
-  }
-
-  template <typename T>
-  void createEstimator(
-      T&& data,
-      const std::string& name,
-      const std::vector<std::string>& row_labels,
-      const std::vector<std::string>& col_labels);
-
-  template <typename T>
-  void writeEstimator(
-      T&& data, const std::string& name, std::size_t rep, std::size_t gen);
-
-  void summarise();
-
-  inline static HDF5Writer* instance_ = nullptr;
-
-  HighFive::File file_;
-  std::size_t n_gens_;
-  std::size_t n_reps_;
-  std::size_t offset_;
-
-  std::unordered_set<std::string> datasets_;
-  std::deque<Job> jobs_;
-  std::condition_variable cv_;
-  std::thread thread_;
-  std::mutex mutex_;
-  bool done_ = false;
-
-  void threadCallback();
 };
+
+inline std::unique_ptr<HDF5Writer> HDF5Writer::instance_;
 
 inline void HDF5Writer::threadCallback() {
   std::unique_lock<std::mutex> lk(mutex_);
@@ -141,54 +157,59 @@ inline void HDF5Writer::threadCallback() {
   }
 }
 
-// TODO: estimators should use HighFive::DataSpace to collect raw estimator data
-// instead of writing each gen / rep pair to a separate data set
-template <typename T>
 inline void HDF5Writer::createEstimator(
-    T&& /*data*/,
     const std::string& name,
     const std::vector<std::string>& row_labels,
-    const std::vector<std::string>& col_labels) {
+    const std::vector<std::string>& col_labels,
+    std::size_t n_rows,
+    std::size_t n_cols) {
   {
     std::lock_guard<std::mutex> lg(mutex_);
 
-    jobs_.push_back([this,
+    Log::debug(
+        "Creating estimator named: {}, n_rows: {}, n_cols: {}",
+        name,
+        n_rows,
+        n_cols);
+
+    jobs_.emplace_back([this,
+                     n_rows = n_rows,
+                     n_cols = n_cols,
                      name_raw = std::format("raw/{}", name),
-                     row_copy = row_labels,
-                     col_copy = col_labels]() {
-      if (!file_.exist(name_raw)) file_.createGroup(name_raw);
+                     row_labels = row_labels,
+                     col_labels = col_labels] {
+      if (!file_.exist(name_raw)) {
+        auto ds = file_.createDataSet<double>(
+            name_raw, HighFive::DataSpace({n_reps_, n_gens_, n_rows, n_cols}));
 
-      HighFive::Group estimator = file_.getGroup(name_raw);
-
-      if (!estimator.hasAttribute("row_labels"))
-        estimator.createAttribute("row_labels", row_copy);
-
-      if (!estimator.hasAttribute("col_labels"))
-        estimator.createAttribute("col_labels", col_copy);
+        ds.createAttribute("row_labels", row_labels);
+        ds.createAttribute("col_labels", col_labels);
+      }
     });
   }
   cv_.notify_one();
 }
 
-template <typename T>
 inline void HDF5Writer::writeEstimator(
-    T&& data, const std::string& name, std::size_t rep, std::size_t gen) {
-  if (gen < offset_) return;
-  gen -= offset_;
+    const Eigen::MatrixXd& data,
+    const std::string& name,
+    std::size_t rep,
+    std::size_t gen) {
+  Log::debug(
+      "Writing into estimator: {}, rep: {}, gen: {}", name, rep + 1, gen + 1);
 
   {
     std::lock_guard<std::mutex> lg(mutex_);
 
-    jobs_.push_back(
-        [this,
-         copy = data,
-         dir = std::format("raw/{}/rep{:03d}", name, rep + 1),
-         path = std::format(
-             "raw/{}/rep{:03d}/gen{:03d}", name, rep + 1, gen + 1)] {
-          if (!file_.exist(dir)) file_.createGroup(dir);
-          Log::debug("H5Writer::writeEstimator: creating data set {}", path);
-          file_.createDataSet(path, copy);
-        });
+    jobs_.emplace_back([this, rep, gen, name, data] {
+      auto ds = file_.getDataSet(std::format("raw/{}", name));
+      std::size_t n_rows = data.rows();
+      std::size_t n_cols = data.cols();
+
+      ds.select({rep, gen, 0, 0}, {1, 1, n_rows, n_cols})
+          .reshapeMemSpace({n_rows, n_cols})
+          .write(data);
+    });
 
     if (!datasets_.contains(name)) datasets_.insert(name);
   }
@@ -199,58 +220,68 @@ inline void HDF5Writer::writeParams(const Params& params) {
   auto params_group = file_.getGroup("params");
 
   // assemble effect matrix
-  Eigen::MatrixXd effect_matrix(params.geno.n_loc, params.pheno.n_pheno);
+  Eigen::MatrixXd effect_matrix(params.geno.numLoci(), params.pheno.size());
   effect_matrix.setZero();
 
-  for (std::size_t pheno = 0; pheno < params.pheno.n_pheno; ++pheno) {
-    auto effects = params.pheno.pheno_effects[pheno];
-    auto locs = params.pheno.pheno_loc[pheno];
+  for (std::size_t pheno = 0; pheno < params.pheno.size(); ++pheno) {
+    auto effects = params.pheno.effects(pheno);
+    auto locs = params.pheno.causalLoci(pheno);
     for (std::size_t el = 0; el < locs.size(); ++el)
       effect_matrix(locs[el], pheno) = effects(el);
   }
 
   file_.createGroup("params/genome");
-  file_.createDataSet("params/genome/n_loc", params.geno.n_loc);
-  file_.createDataSet("params/genome/locus_freq", params.geno.locus_freq);
-  file_.createDataSet("params/genome/locus_rec", params.geno.locus_rec);
-  file_.createDataSet("params/genome/locus_mut", params.geno.locus_mut);
+  file_.createDataSet("params/genome/n_loc", params.geno.numLoci());
+  file_.createDataSet(
+      "params/genome/locus_freq", params.geno.locusFrequencies());
+  file_.createDataSet(
+      "params/genome/locus_rec", params.geno.locusRecombination());
+  file_.createDataSet("params/genome/locus_mut", params.geno.locusMutation());
 
   file_.createGroup("params/phenome");
-  file_.createDataSet("params/phenome/n_pheno", params.pheno.n_pheno);
-  file_.createDataSet("params/phenome/names", params.pheno.names);
-  file_.createDataSet("params/phenome/n_locs", params.pheno.n_locs);
+  file_.createDataSet("params/phenome/n_pheno", params.pheno.size());
+  file_.createDataSet("params/phenome/names", params.pheno.names());
+  file_.createDataSet("params/phenome/n_locs", params.pheno.numCausalLoci());
   file_.createDataSet("params/phenome/effects", effect_matrix);
-  file_.createDataSet("params/phenome/gen_cor", params.pheno.gen_cor);
-  file_.createDataSet("params/phenome/env_cor", params.pheno.env_cor);
-  file_.createDataSet("params/phenome/var_gen", params.pheno.var_gen);
-  file_.createDataSet("params/phenome/var_env", params.pheno.var_env);
-  file_.createDataSet("params/phenome/var_vert", params.pheno.var_vert);
+  file_.createDataSet(
+      "params/phenome/gen_cor", params.pheno.geneticComponentCorrelation());
+  file_.createDataSet(
+      "params/phenome/env_cor", params.pheno.environComponentCorrelation());
+  file_.createDataSet("params/phenome/var_gen", params.pheno.varGenetic());
+  file_.createDataSet(
+      "params/phenome/var_env", params.pheno.varEnvironmental());
+  file_.createDataSet("params/phenome/var_vert", params.pheno.varIndirect());
 
   file_.createGroup("params/mating");
-  file_.createDataSet("params/mating/mate_cor", params.mate.mate_cor);
-  file_.createDataSet("params/mating/tol_inf", params.mate.tol);
-  file_.createDataSet("params/mating/max_itr", params.mate.max_itr);
-  file_.createDataSet("params/mating/temp_init", params.mate.temp_init);
-  file_.createDataSet("params/mating/temp_decay", params.mate.temp_decay);
+  file_.createDataSet(
+      "params/mating/mate_cor", params.mate.spouseCorrelation());
+  file_.createDataSet("params/mating/tol_inf", params.mate.tolerance());
+  file_.createDataSet("params/mating/max_itr", params.mate.maxIterations());
+  file_.createDataSet("params/mating/temp_init", params.mate.temperatureInit());
+  file_.createDataSet(
+      "params/mating/temp_decay", params.mate.temperatureDecay());
 
   file_.createGroup("params/simulation");
-  file_.createDataSet("params/simulation/n_ind", params.global.n_ind);
-  file_.createDataSet("params/simulation/n_gens", params.global.n_gens);
-  file_.createDataSet("params/simulation/rng_seed", params.global.random_seed);
+  file_.createDataSet("params/simulation/n_ind", params.numIndividuals());
+  file_.createDataSet("params/simulation/n_gens", params.numGenerations());
+  file_.createDataSet("params/simulation/rng_seed", params.randomSeed());
 }
 
-template <typename T>
 inline void HDF5Writer::create(
-    T&& data,
     const std::string& name,
     const std::vector<std::string>& row_labels,
-    const std::vector<std::string>& col_labels) {
-  HDF5Writer::getInstance().createEstimator(data, name, row_labels, col_labels);
+    const std::vector<std::string>& col_labels,
+    std::size_t n_rows,
+    std::size_t n_cols) {
+  HDF5Writer::getInstance().createEstimator(
+      name, row_labels, col_labels, n_rows, n_cols);
 }
 
-template <typename T>
 inline void HDF5Writer::write(
-    T&& data, const std::string& name, std::size_t rep, std::size_t gen) {
+    const Eigen::MatrixXd& data,
+    const std::string& name,
+    std::size_t rep,
+    std::size_t gen) {
   HDF5Writer::getInstance().writeEstimator(data, name, rep, gen);
 }
 
@@ -261,22 +292,18 @@ inline void HDF5Writer::summarise() {
     // the group we want to write to
     file_.createGroup(path_summary);
 
-    // get the labels
-    std::string path_raw = std::format("raw/{}", name);
-    auto group = file_.getGroup(path_raw);
+    // get the data set
+    auto ds = file_.getDataSet(std::format("raw/{}", name));
+    auto dims = ds.getDimensions();
+    std::size_t n_rows = dims[2];
+    std::size_t n_cols = dims[3];
+
     auto row_labels =
-        group.getAttribute("row_labels").read<std::vector<std::string>>();
+        ds.getAttribute("row_labels").read<std::vector<std::string>>();
     auto col_labels =
-        group.getAttribute("col_labels").read<std::vector<std::string>>();
+        ds.getAttribute("col_labels").read<std::vector<std::string>>();
 
-    // infer the dimension
-    Eigen::MatrixXd m;
-    file_.getDataSet(std::format("{}/rep{:03d}/gen{:03d}", path_raw, 1, 1))
-        .read(m);
-
-    std::size_t n_rows = m.rows();
-    std::size_t n_cols = m.cols();
-
+    Eigen::MatrixXd m(n_rows, n_cols);
     Eigen::MatrixXd mean = Eigen::MatrixXd::Zero(n_rows, n_cols);
     Eigen::MatrixXd stderr = Eigen::MatrixXd(n_rows, n_cols);
 
@@ -296,13 +323,13 @@ inline void HDF5Writer::summarise() {
         std::format("{}/confint_hi", path_summary),
         HighFive::DataSpace({n_gens_, n_rows, n_cols}));
 
-    for (auto* ds : {&ds_mean, &ds_stderr, &ds_confint_lo, &ds_confint_hi}) {
-      ds->createAttribute("row_labels", row_labels);
-      ds->createAttribute("col_labels", col_labels);
+    for (auto* ds_stat :
+         {&ds_mean, &ds_stderr, &ds_confint_lo, &ds_confint_hi}) {
+      ds_stat->createAttribute("row_labels", row_labels);
+      ds_stat->createAttribute("col_labels", col_labels);
     }
 
     double t = 1;
-
     if (n_reps_ > 1) {
       boost::math::students_t_distribution dist(n_reps_ - 1);
       t = boost::math::quantile(dist, 0.975);
@@ -313,20 +340,16 @@ inline void HDF5Writer::summarise() {
       stderr.setZero();
 
       for (std::size_t rep = 0; rep < n_reps_; ++rep) {
-        file_
-            .getDataSet(
-                std::format(
-                    "{}/rep{:03d}/gen{:03d}", path_raw, rep + 1, gen + 1))
+        ds.select({rep, gen, 0, 0}, {1, 1, n_rows, n_cols})
+            .reshapeMemSpace({n_rows, n_cols})
             .read(m);
         mean += m;
       }
       mean /= static_cast<double>(n_reps_);
 
       for (std::size_t rep = 0; rep < n_reps_; ++rep) {
-        file_
-            .getDataSet(
-                std::format(
-                    "{}/rep{:03d}/gen{:03d}", path_raw, rep + 1, gen + 1))
+        ds.select({rep, gen, 0, 0}, {1, 1, n_rows, n_cols})
+            .reshapeMemSpace({n_rows, n_cols})
             .read(m);
         stderr += (m - mean).array().square().matrix();
       }
