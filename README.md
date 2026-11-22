@@ -40,8 +40,9 @@ The following dependencies are required to build from source:
 
 macOS's Accelerate library provides BLAS and LAPACK natively. On Linux, these
 can be installed, e.g., via `apt` as `libopenblas-dev` and `liblapack-dev` on
-Debian-based distributions or equivalents. Currently, Windows is not supported,
-although you can use the [Windows Subsystem for Linux (WSL)](https://github.com/microsoft/WSL).
+Debian-based distributions or equivalents. Notice that the OpenBLAS vendor
+specifically is required. Currently, Windows is not supported, although you can
+use the [Windows Subsystem for Linux (WSL)](https://github.com/microsoft/WSL).
 With dependencies sorted, the following can be used to build the software:
 
 ```sh
