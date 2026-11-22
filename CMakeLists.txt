@@ -118,7 +118,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 file(GLOB LUA_SOURCES external/lua/*.c)
 list(FILTER LUA_SOURCES EXCLUDE REGEX "(lua|luac)\\.c$") # exclude runtime envs
 add_library(lua_static STATIC "${LUA_SOURCES}")
-target_include_directories(lua_static PUBLIC external/lua)
+target_include_directories(lua_static INTERFACE external/lua)
 set_target_properties(lua_static PROPERTIES C_STANDARD 99)
 
 set(SOL2_LUA_VERSION "5.4" CACHE STRING "" FORCE)
@@ -253,9 +253,7 @@ endif()
 # The CLI tool
 if (BUILD_EXECUTABLE)
   add_executable(knoop src/knoop.cc)
-  add_executable(sol_test src/sol_test.cc)
   target_link_libraries(knoop PRIVATE knoop_lib)
-  target_link_libraries(sol_test PRIVATE knoop_lib)
   target_compile_definitions(knoop PRIVATE
     knoop_OS="${CMAKE_SYSTEM_NAME}"
     knoop_VERSION="${PROJECT_VERSION}"
