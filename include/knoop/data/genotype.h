@@ -22,25 +22,34 @@
 #include <knoop/data/haplotype.h>
 
 #include <Eigen/Dense>
+#include <algorithm>
+#include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <ranges>
 #include <vector>
-#include <algorithm>
 
 namespace knoop {
 
+/**
+ * \brief Stores causal genotypes using a dense bit-packed buffer
+ *
+ * \details
+ */
 class GenotypeBuffer {
  public:
   explicit GenotypeBuffer(const Params& params)
-      : locus_mut_(std::move(params.geno.locus_mut)),
-        locus_rec_(std::move(params.geno.locus_rec)),
-        allele_freqs_init_(std::move(params.geno.locus_freq)),
-        locus_means_(params.geno.n_loc),
-        locus_vars_(params.geno.n_loc),
-        allele_freqs_(params.geno.n_loc),
-        genotype_freqs_(3, params.geno.n_loc),
-        paternal_(params.global.n_ind, params.geno.n_loc),
-        maternal_(params.global.n_ind, params.geno.n_loc) {};
+      : transpose_buf_(
+            utils::ceil64(params.geno.numLoci()) *
+            utils::ceil64(params.numIndividuals())),
+        geno_(params.geno),
+        locus_means_(params.geno.numLoci()),
+        locus_vars_(params.geno.numLoci()),
+        allele_freqs_(params.geno.numLoci()),
+        genotype_freqs_(3, params.geno.numLoci()),
+        paternal_(params.numIndividuals(), params.geno.numLoci()),
+        maternal_(params.numIndividuals(), params.geno.numLoci()) {};
 
   /** \brief Returns a vector of locus population means. */
   Eigen::VectorXd& locusMean() noexcept { return locus_means_; }
@@ -114,6 +123,13 @@ class GenotypeBuffer {
 
   /**
    * \brief Decompresses a portion of a genotype buffer into a double matrix.
+   *
+   * \param individual_start Start index of slice along individual axis
+   * \param individual_end End index of slice along individual axis
+   * \param loci Vector of locus indices
+   * \param buffer_out Container for decompressed genotypes
+   * \param centre If true, centres decompressed genotypes to zero expectation
+   * \param scale If true, scales decompressed genotypes to unit variance
    */
   void decompress(
       std::size_t individual_start,
@@ -124,10 +140,9 @@ class GenotypeBuffer {
       bool scale = false);
 
  private:
-  /** */
-  const Eigen::VectorXd locus_mut_;
-  const Eigen::VectorXd locus_rec_;
-  const Eigen::VectorXd allele_freqs_init_;
+  /** resident scratch buffer for haplotype transposition */
+  std::vector<std::uint64_t> transpose_buf_;
+  const GenomeParams& geno_;
   Eigen::VectorXd locus_means_;
   Eigen::VectorXd locus_vars_;
   Eigen::VectorXd allele_freqs_;
@@ -147,14 +162,6 @@ inline void GenotypeBuffer::transpose() noexcept {
   maternal_.transpose();
 }
 
-/**
- * \details Single-pass computation of locus summary statistics, the results of
- * which are stored in the fields \ref locus_means_, \ref locus_vars_, \ref
- * allele_freqs_, and \ref genotype_freqs_. These are used in subsequent
- * computations for efficient, in-place standardisation of genotypes.
- *
- * \pre Buffer must be in locus-major layout
- */
 inline void GenotypeBuffer::computeLocusStats() {
   assert(
       (paternal_.layout() == BufferLayout::LocusMajor &&
@@ -166,24 +173,23 @@ inline void GenotypeBuffer::computeLocusStats() {
 
   const std::size_t n_blocks = (n_ind + 63) / 64;
 
+#pragma omp parallel for schedule(static)
   for (std::size_t loc = 0; loc < n_loci; ++loc) {
     std::size_t hom = 0;
     std::size_t het = 0;
     std::size_t dosage = 0;
 
     for (std::size_t block = 0; block < n_blocks; ++block) {
-      hom +=
-          __builtin_popcountll((paternal_(loc, block) & maternal_(loc, block)));
-      het +=
-          __builtin_popcountll((paternal_(loc, block) ^ maternal_(loc, block)));
-      dosage += hom + het;
+      hom += std::popcount((paternal_(loc, block) & maternal_(loc, block)));
+      het += std::popcount((paternal_(loc, block) ^ maternal_(loc, block)));
+      dosage += (2 * hom) + het;
     }
 
     /** trim away the bits used to pad the buffer to a multiple of 64 */
     std::uint64_t mask = (n_ind % 64) ? ~((1ULL << (n_ind % 64)) - 1ULL) : 0ULL;
-    std::size_t homl = __builtin_popcountll(
+    std::size_t homl = std::popcount(
         (paternal_(loc, n_blocks - 1) & maternal_(loc, n_blocks - 1)) & mask);
-    std::size_t hetl = __builtin_popcountll(
+    std::size_t hetl = std::popcount(
         (paternal_(loc, n_blocks - 1) ^ maternal_(loc, n_blocks - 1)) & mask);
 
     hom -= homl;
@@ -209,25 +215,6 @@ inline void GenotypeBuffer::computeLocusStats() {
   }
 }
 
-/**
- * \details Rows index individuals in the range [\p individual_start, \p
- * individual_end), with columns running over the loci listed in \p loci, in
- * order of appearance. If \p buffer_out is larger than the requested data,
- * the decompressed data are written in the top left block matrix of the
- * destination.
- *
- * \param individual_start Individual index where decompression is started.
- * \param individual_end Individual index where decompression stops, exclusive.
- * \param loci A vector of locus indices which are decompressed
- * \param buffer_out Eigen matrix which decompressed data is written into
- * \param centre If `true`, genotypes in decompressed matrix have zero mean.
- * \param scale If `true`, genotypes in decompressed matrix have unit variance.
- *
- * \pre Buffer must be in locus-major layout.
- * \pre \p individual_start <= \p individual_end must lie in [0, \ref n_ind_].
- * \pre Locus indices must lie in [0, \ref n_loci_).
- * \pre Output buffer must be large enough to house decompressed matrix.
- */
 inline void GenotypeBuffer::decompress(
     std::size_t individual_start,
     std::size_t individual_end,

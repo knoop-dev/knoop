@@ -41,7 +41,7 @@ class PopulationEstimatorStrategy {
         n_rows_(n_rows),
         n_cols_(n_cols),
         data_(n_rows_, n_cols_) {
-    HDF5Writer::create(data_, name_, row_labels_, col_labels_);
+    HDF5Writer::create(name_, row_labels_, col_labels_, n_rows_, n_cols_);
   }
 
   virtual ~PopulationEstimatorStrategy() = default;

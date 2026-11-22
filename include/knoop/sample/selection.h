@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
+
 #include <Eigen/Dense>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <functional>
@@ -28,32 +30,31 @@ namespace knoop {
  * subset of a proband's constituents to produce a single aggregate trait vector
  * that enters a weighting function.
  */
-enum class AggFunction { Max, Min, Mean, Identity };
+enum class Aggregator { Max, Min, Mean, Identity };
 
-inline AggFunction aggregatorFromString(const std::string& s) {
+inline Aggregator aggregatorFromString(const std::string& s) {
   std::string l = boost::to_lower_copy(s);
-  if (l == "max") return AggFunction::Max;
-  if (l == "min") return AggFunction::Min;
-  if (l == "mean") return AggFunction::Mean;
-  if (l == "identity") return AggFunction::Identity;
-  throw std::runtime_error("Unknown aggregator type" + s);
+  if (l == "max") return Aggregator::Max;
+  if (l == "min") return Aggregator::Min;
+  if (l == "mean") return Aggregator::Mean;
+  if (l == "identity") return Aggregator::Identity;
+  throw KnoopInvalidArgumentError("Unknown aggregator type {}", s);
 }
 
 inline Eigen::MatrixXd aggregate(
-    const Eigen::MatrixXd& preaggregate, AggFunction agg) {
-  if (agg == AggFunction::Mean) return preaggregate.colwise().mean();
-  if (agg == AggFunction::Max) return preaggregate.colwise().maxCoeff();
-  if (agg == AggFunction::Min) return preaggregate.colwise().minCoeff();
-  if (agg == AggFunction::Identity) {
+    const Eigen::MatrixXd& preaggregate, Aggregator agg) {
+  if (agg == Aggregator::Mean) return preaggregate.colwise().mean();
+  if (agg == Aggregator::Max) return preaggregate.colwise().maxCoeff();
+  if (agg == Aggregator::Min) return preaggregate.colwise().minCoeff();
+  if (agg == Aggregator::Identity) {
     if (preaggregate.rows() > 1)
-      throw std::runtime_error(
-          std::format(
-              "Identity aggregation can only be applied to single individual "
-              "(got {})",
-              preaggregate.rows()));
+      throw KnoopInvalidArgumentError(
+          "Identity aggregation can only be applied to single individual "
+          "(got {})",
+          preaggregate.rows());
     return preaggregate.row(0);
   }
-  throw std::invalid_argument("Unrecognised aggregation function");
+  throw KnoopInvalidArgumentError("Unrecognised aggregation function");
 }
 
 /**
@@ -63,29 +64,37 @@ inline Eigen::MatrixXd aggregate(
 using WeightFunction =
     std::function<void(const Eigen::MatrixXd&, Eigen::VectorXd&)>;
 
-inline WeightFunction uniform() {
+inline WeightFunction weightUniform() {
   return [](const Eigen::MatrixXd& /*agg*/, Eigen::VectorXd& res) {
     res.setConstant(1.0);
   };
 }
 
-inline WeightFunction logistic(const Eigen::VectorXd& effects) {
+inline WeightFunction weightLogistic(const Eigen::VectorXd& effects) {
   return [effects](const Eigen::MatrixXd& agg, Eigen::VectorXd& res) {
     res = 1.0 / (1.0 + (-agg * effects).array().exp());
   };
 }
 
-inline WeightFunction caseControl(
-    double threshold, bool above, const Eigen::VectorXd& effects) {
-  return [threshold, above, effects](
+inline WeightFunction weightCaseControl(
+    double threshold, bool greater, const Eigen::VectorXd& effects) {
+  return [threshold, greater, effects](
              const Eigen::MatrixXd& agg, Eigen::VectorXd& res) {
     Eigen::VectorXd score = agg * effects;
-    if (above) {
+    if (greater) {
       res = (score.array() > threshold).cast<double>().matrix();
     } else {
       res = (score.array() < threshold).cast<double>().matrix();
     }
   };
 }
+
+struct Weight {
+  WeightFunction weight_fn;
+
+  void operator()(const Eigen::MatrixXd& agg, Eigen::VectorXd& res) const {
+    weight_fn(agg, res);
+  }
+};
 
 };  // namespace knoop

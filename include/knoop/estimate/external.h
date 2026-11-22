@@ -66,14 +66,13 @@ class SampleEstimatorExternalStrategy : public SampleEstimatorStrategy<P> {
     Eigen::MatrixXd result = parseFile<Eigen::MatrixXd>(out_path_);
     if (static_cast<std::size_t>(result.rows()) != this->numRows() ||
         static_cast<std::size_t>(result.cols()) != this->numCols())
-      throw std::runtime_error(
-          std::format(
-              "{}: expected {}x{}, got {}x{}",
-              cmd_.string(),
-              this->numRows(),
-              this->numCols(),
-              result.rows(),
-              result.cols()));
+      throw KnoopDimensionError(
+          "{}: expected {}x{}, got {}x{}",
+          cmd_.string(),
+          this->numRows(),
+          this->numCols(),
+          result.rows(),
+          result.cols());
     this->data_ = std::move(result);
   }
 
@@ -95,46 +94,52 @@ class SampleEstimatorExternalStrategy : public SampleEstimatorStrategy<P> {
     }
 
     if (result.exit_code != 0)
-      throw std::runtime_error(
-          std::format(
-              "{} exited with code {}, check log for detailed output",
-              cmd_.string(),
-              result.exit_code));
+      throw KnoopIOError(
+          "{} exited with code {}, check log for detailed output",
+          cmd_.string(),
+          result.exit_code);
   }
 };
 
-template <ProbandType P>
-inline SampleEstimator<P> sampleExternal(
-    std::string name,
-    std::string cmd,
-    std::vector<std::string> args,
+inline SampleEstimator sampleExternal(
+    const std::string& name,
+    const std::string& cmd,
+    const std::vector<std::string>& args,
     std::size_t n_rows,
     std::size_t n_cols = 1,
-    std::optional<std::vector<std::string>> row_labels = std::nullopt,
-    std::optional<std::vector<std::string>> col_labels = std::nullopt) {
-  return SampleEstimator<P>{
-      .name = name,
-      .fn = [name = std::move(name),
-             cmd = std::move(cmd),
-             args = std::move(args),
-             n_rows,
-             n_cols,
-             row_labels = std::move(row_labels),
-             col_labels = std::move(col_labels)](
-                const Params& /*params*/,
-                std::size_t /*n_probands*/,
-                const std::filesystem::path& sample_dir) {
-        return std::make_unique<SampleEstimatorExternalStrategy<P>>(
-            sample_dir.filename().string(),
-            sample_dir,
-            name,
-            cmd,
-            args,
-            n_rows,
-            n_cols,
-            row_labels,
-            col_labels);
-      }};
+    const std::optional<std::vector<std::string>>& row_labels = std::nullopt,
+    const std::optional<std::vector<std::string>>& col_labels = std::nullopt) {
+  return SampleEstimator([name,
+                          cmd,
+                          args,
+                          n_rows,
+                          n_cols,
+                          row_labels,
+                          col_labels]<ProbandType P>() {
+    return SampleEstimatorFor<P>{
+        .name = name,
+        .fn = [name = name,
+               cmd = cmd,
+               args = args,
+               n_rows,
+               n_cols,
+               row_labels = row_labels,
+               col_labels = col_labels](
+                  const Params& /*params*/,
+                  std::size_t /*n_probands*/,
+                  const std::filesystem::path& sample_dir) {
+          return std::make_unique<SampleEstimatorExternalStrategy<P>>(
+              sample_dir.filename().string(),
+              sample_dir,
+              name,
+              cmd,
+              args,
+              n_rows,
+              n_cols,
+              row_labels,
+              col_labels);
+        }};
+  });
 }
 
 }  // namespace knoop

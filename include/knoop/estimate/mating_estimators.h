@@ -29,18 +29,18 @@ namespace knoop {
 
 namespace details {
 
-class EstimatorMateCorStrategy : public PopulationEstimatorStrategy {
+class EstimatorSpouseCorStrategy : public PopulationEstimatorStrategy {
  public:
-  explicit EstimatorMateCorStrategy(const Params& params, Component type)
+  explicit EstimatorSpouseCorStrategy(const Params& params, Component type)
       : PopulationEstimatorStrategy(
             "mate_" + componentToString(type) + "_cor",
-            utils::vectorSuffix(params.pheno.names, "_male"),
-            utils::vectorSuffix(params.pheno.names, "_female"),
-            params.pheno.n_pheno,
-            params.pheno.n_pheno),
+            utils::vectorSuffix(params.pheno.names(), "_male"),
+            utils::vectorSuffix(params.pheno.names(), "_female"),
+            params.pheno.size(),
+            params.pheno.size()),
         type_(type),
-        n_sex_(params.global.n_ind / 2),
-        n_pheno_(params.pheno.n_pheno),
+        n_sex_(params.numIndividuals() / 2),
+        n_pheno_(params.pheno.size()),
         std_male_(n_sex_, n_pheno_),
         std_female_(n_sex_, n_pheno_) {}
 
@@ -65,12 +65,12 @@ class EstimatorMateCorStrategy : public PopulationEstimatorStrategy {
 
 }  // namespace details
 
-inline PopulationEstimator populationMateCor(
+inline PopulationEstimator populationSpouseCor(
     Component type = Component::Total) {
   return PopulationEstimator{
       .name = "mate-cor-" + componentToString(type),
       .fn = [type](const Params& params) {
-        return std::make_unique<details::EstimatorMateCorStrategy>(
+        return std::make_unique<details::EstimatorSpouseCorStrategy>(
             params, type);
       }};
 }

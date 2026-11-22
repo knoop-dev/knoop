@@ -65,7 +65,7 @@ jobs:
         include:
           - os: ubuntu-latest
             name: linux-x86_64
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-26.04-arm
             name: linux-arm64
           - os: macos-15-intel
             name: macos-x86_64
@@ -84,7 +84,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libopenblas-dev
+          sudo apt-get install -y libopenblas-serial-dev liblapack-dev
 
       - name: Create build directory
         run: |

@@ -96,18 +96,17 @@ struct State {
 
 inline State buildState(const Params& params) {
   return State{
-      .n_sex = params.global.n_ind / 2,
-      .rep = params.global.rep_id,
+      .n_sex = params.numIndividuals() / 2,
+      .rep = params.replicateId(),
       .genos = {GenotypeBuffer(params), GenotypeBuffer(params)},
       .phenos = {PhenotypeBuffer(params), PhenotypeBuffer(params)},
       .matchings =
-          {std::vector<std::size_t>(params.global.n_ind / 2),
-           std::vector<std::size_t>(params.global.n_ind / 2)},
+          {std::vector<std::size_t>(params.numIndividuals() / 2),
+           std::vector<std::size_t>(params.numIndividuals() / 2)},
       .inv_matchings =
-          {std::vector<std::size_t>(params.global.n_ind / 2),
-           std::vector<std::size_t>(params.global.n_ind / 2)},
-      .pedigree =
-          Pedigree(params.global.pedigree_max_depth, params.global.n_ind)};
+          {std::vector<std::size_t>(params.numIndividuals() / 2),
+           std::vector<std::size_t>(params.numIndividuals() / 2)},
+      .pedigree = Pedigree(params.pedigreeMaxDepth(), params.numIndividuals())};
 }
 
 }  // namespace knoop

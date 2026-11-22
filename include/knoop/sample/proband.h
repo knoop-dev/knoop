@@ -156,7 +156,7 @@ struct Data<ProbandType::Self> {
 
   static constexpr MemberEnum kOfDefault = Self::Self;
   static constexpr MemberEnum kIncludeDefault = Self::Self;
-  static constexpr AggFunction kAggDefault = AggFunction::Identity;
+  static constexpr Aggregator kAggDefault = Aggregator::Identity;
 
   static constexpr Member<MemberEnum> kRoot = {
       .self = Self::Self,
@@ -176,7 +176,7 @@ struct Data<ProbandType::Family> {
 
   static constexpr MemberEnum kOfDefault = Family::All;
   static constexpr MemberEnum kIncludeDefault = Family::All;
-  static constexpr AggFunction kAggDefault = AggFunction::Mean;
+  static constexpr Aggregator kAggDefault = Aggregator::Mean;
 
   static constexpr Member<MemberEnum> kRoot = {
       .self = Family::Father,
@@ -222,7 +222,7 @@ struct Data<ProbandType::Mate> {
 
   static constexpr MemberEnum kOfDefault = Mate::Couple;
   static constexpr MemberEnum kIncludeDefault = Mate::All;
-  static constexpr AggFunction kAggDefault = AggFunction::Mean;
+  static constexpr Aggregator kAggDefault = Aggregator::Mean;
 
   static constexpr Member<MemberEnum> kRoot = {
       .self = Mate::Husband,
@@ -306,7 +306,7 @@ static constexpr ProbandMemberEnum<P> kProbandIncludeDefault =
     Data<P>::kIncludeDefault;
 
 template <ProbandType P>
-static constexpr AggFunction kProbandAggDefault = Data<P>::kAggDefault;
+static constexpr Aggregator kProbandAggregatorDefault = Data<P>::kAggDefault;
 
 /**
  * An run-time instantiation of a proband, has an associated Id and is filled
@@ -416,8 +416,7 @@ inline ProbandMemberEnum<P> probandEnumFromString(const std::string& s) {
     if (s == "females") return Mate::Females;
   }
 
-  throw std::invalid_argument(
-      std::format("Unknown proband member name '{}'", s));
+  throw KnoopInvalidArgumentError("Unknown proband member name '{}'", s);
 }
 
 }  // namespace knoop

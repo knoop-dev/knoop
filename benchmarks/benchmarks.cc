@@ -15,13 +15,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <benchmark/benchmark.h>
 #include <knoop/core.h>
 #include <knoop/estimate.h>
 #include <knoop/init.h>
+#include <knoop/mutate.h>
 #include <knoop/sample.h>
 #include <knoop/simulation.h>
-#include <knoop/mutate.h>
-#include <benchmark/benchmark.h>
 #include <omp.h>
 #include <sys/resource.h>
 
@@ -51,19 +51,40 @@ std::vector<double> generateSingularValues(
 // NOLINTBEGIN
 
 static void BM_GenerateHaplotypes_operator(benchmark::State& gbench_state) {
-  knoop::UniformDistribution dist_allele_freq(0.01, 0.5);
+  knoop::random::Uniform dist_allele_freq(0.01, 0.5);
 
   std::size_t n_individuals = gbench_state.range(0);
   std::size_t n_loci = gbench_state.range(1);
 
-  knoop::Params params{
-      .geno =
-          {.n_loc = n_loci,
-           .locus_freq = dist_allele_freq.generate(n_loci),
-           .locus_rec = Eigen::VectorXd::Constant(n_loci, 0.5),
-           .locus_mut = Eigen::VectorXd::Constant(n_loci, 0.0)},
-      .global = {.n_ind = n_individuals, .n_gens = 1},
-  };
+  knoop::GenomeParams genome(
+      n_loci,
+      dist_allele_freq(n_loci),
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      {}, Eigen::MatrixXd::Identity(0, 0), Eigen::MatrixXd::Identity(0, 0));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Random, Eigen::MatrixXd::Identity(0, 0), 0, 0);
+
+  knoop::Params params(
+      n_individuals,
+      1,  // n_generations
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},     // estimators
+      {},     // samples
+      1,      // n_replicates
+      1,      // n_workers
+      1,      // n_threads_per_worker
+      false,  // share_init_state
+      false,  // pedigree_warmup
+      1,      // pedigree_max_depth
+      42,     // random_seed
+      std::filesystem::temp_directory_path(),
+      std::nullopt);
 
   knoop::State state = knoop::buildState(params);
   knoop::GenerateHaplotypes haplo(params);
@@ -71,48 +92,89 @@ static void BM_GenerateHaplotypes_operator(benchmark::State& gbench_state) {
   for (auto _ : gbench_state) haplo(state);
 
   gbench_state.counters["genome_bytes"] = static_cast<double>(
-      2 * state.geno().rows() * state.geno().words() *
-      sizeof(std::uint64_t));
+      2 * state.geno().rows() * state.geno().words() * sizeof(std::uint64_t));
 }
 
 static void BM_GenotypeBuffer_computeAlleleFreqs(
     benchmark::State& gbench_state) {
-  knoop::UniformDistribution dist_allele_freq(0.01, 0.5);
+  knoop::random::Uniform dist_allele_freq(0.01, 0.5);
 
   std::size_t n_individuals = gbench_state.range(0);
   std::size_t n_loci = gbench_state.range(1);
 
-  knoop::Params params{
-      .geno =
-          {.n_loc = n_loci,
-           .locus_freq = dist_allele_freq.generate(n_loci),
-           .locus_rec = Eigen::VectorXd::Constant(n_loci, 0.5),
-           .locus_mut = Eigen::VectorXd::Constant(n_loci, 0.0)},
-      .global = {.n_ind = n_individuals, .n_gens = 1},
-  };
+  knoop::GenomeParams genome(
+      n_loci,
+      dist_allele_freq(n_loci),
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      {}, Eigen::MatrixXd::Identity(0, 0), Eigen::MatrixXd::Identity(0, 0));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Random, Eigen::MatrixXd::Identity(0, 0), 0, 0);
+
+  knoop::Params params(
+      n_individuals,
+      1,
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},
+      {},
+      1,
+      1,
+      1,
+      false,
+      false,
+      1,
+      42,
+      std::filesystem::temp_directory_path(),
+      std::nullopt);
 
   knoop::State state = knoop::buildState(params);
   knoop::GenerateHaplotypes haplo(params);
   haplo(state);
 
-  for (auto _ : gbench_state) state.geno().computeAlleleFreqs();
+  for (auto _ : gbench_state) state.geno().computeLocusStats();
 }
 
 static void BM_GenotypeBuffer_computeLocusStats(
     benchmark::State& gbench_state) {
-  knoop::UniformDistribution dist_allele_freq(0.01, 0.5);
+  knoop::random::Uniform dist_allele_freq(0.01, 0.5);
 
   std::size_t n_individuals = gbench_state.range(0);
   std::size_t n_loci = gbench_state.range(1);
 
-  knoop::Params params{
-      .geno =
-          {.n_loc = n_loci,
-           .locus_freq = dist_allele_freq.generate(n_loci),
-           .locus_rec = Eigen::VectorXd::Constant(n_loci, 0.5),
-           .locus_mut = Eigen::VectorXd::Constant(n_loci, 0.0)},
-      .global = {.n_ind = n_individuals, .n_gens = 1},
-  };
+  knoop::GenomeParams genome(
+      n_loci,
+      dist_allele_freq(n_loci),
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      {}, Eigen::MatrixXd::Identity(0, 0), Eigen::MatrixXd::Identity(0, 0));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Random, Eigen::MatrixXd::Identity(0, 0), 0, 0);
+
+  knoop::Params params(
+      n_individuals,
+      1,
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},
+      {},
+      1,
+      1,
+      1,
+      false,
+      false,
+      1,
+      42,
+      std::filesystem::temp_directory_path(),
+      std::nullopt);
 
   knoop::State state = knoop::buildState(params);
   knoop::GenerateHaplotypes haplo(params);
@@ -122,19 +184,40 @@ static void BM_GenotypeBuffer_computeLocusStats(
 }
 
 static void BM_GenotypeBuffer_transpose(benchmark::State& gbench_state) {
-  knoop::UniformDistribution dist_allele_freq(0.01, 0.5);
+  knoop::random::Uniform dist_allele_freq(0.01, 0.5);
 
   std::size_t n_individuals = gbench_state.range(0);
   std::size_t n_loci = gbench_state.range(1);
 
-  knoop::Params params{
-      .geno =
-          {.n_loc = n_loci,
-           .locus_freq = dist_allele_freq.generate(n_loci),
-           .locus_rec = Eigen::VectorXd::Constant(n_loci, 0.5),
-           .locus_mut = Eigen::VectorXd::Constant(n_loci, 0.0)},
-      .global = {.n_ind = n_individuals, .n_gens = 1},
-  };
+  knoop::GenomeParams genome(
+      n_loci,
+      dist_allele_freq(n_loci),
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      {}, Eigen::MatrixXd::Identity(0, 0), Eigen::MatrixXd::Identity(0, 0));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Random, Eigen::MatrixXd::Identity(0, 0), 0, 0);
+
+  knoop::Params params(
+      n_individuals,
+      1,
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},
+      {},
+      1,
+      1,
+      1,
+      false,
+      false,
+      1,
+      42,
+      std::filesystem::temp_directory_path(),
+      std::nullopt);
 
   knoop::State state = knoop::buildState(params);
   knoop::GenerateHaplotypes haplo(params);
@@ -144,23 +227,44 @@ static void BM_GenotypeBuffer_transpose(benchmark::State& gbench_state) {
 }
 
 static void BM_UpdateGenome_operator(benchmark::State& gbench_state) {
-  knoop::UniformDistribution dist_allele_freq(0.01, 0.5);
+  knoop::random::Uniform dist_allele_freq(0.01, 0.5);
 
   std::size_t n_individuals = gbench_state.range(0);
   std::size_t n_loci = gbench_state.range(1);
 
-  knoop::Params params{
-      .geno =
-          {.n_loc = n_loci,
-           .locus_freq = dist_allele_freq.generate(n_loci),
-           .locus_rec = Eigen::VectorXd::Constant(n_loci, 0.5),
-           .locus_mut = Eigen::VectorXd::Constant(n_loci, 0.0)},
-      .global = {.n_ind = n_individuals, .n_gens = 1, .pedigree_max_depth = 1},
-  };
+  knoop::GenomeParams genome(
+      n_loci,
+      dist_allele_freq(n_loci),
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      {}, Eigen::MatrixXd::Identity(0, 0), Eigen::MatrixXd::Identity(0, 0));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Random, Eigen::MatrixXd::Identity(0, 0), 0, 0);
+
+  knoop::Params params(
+      n_individuals,
+      1,
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},
+      {},
+      1,
+      1,
+      1,
+      false,
+      false,
+      1,
+      42,
+      std::filesystem::temp_directory_path(),
+      std::nullopt);
 
   knoop::State state = knoop::buildState(params);
   knoop::GenerateHaplotypes haplo(params);
-  knoop::UpdateGenome update(params);
+  knoop::Inherit inherit(params);
 
   haplo(state);
   state.transpose();
@@ -168,51 +272,71 @@ static void BM_UpdateGenome_operator(benchmark::State& gbench_state) {
   std::iota(state.matching().begin(), state.matching().end(), 0);
   state.updatePedigree();
 
-  for (auto _ : gbench_state) update(state);
+  for (auto _ : gbench_state) inherit(state);
 }
 
 static void BM_ScorePhenotypes_operator(benchmark::State& gbench_state) {
   knoop::random::Xoshiro256pp::setSeed(42);
-  knoop::UniformDistribution dist_allele_freq(0.01, 0.5);
-  knoop::NormalDistribution dist_effects;
+  knoop::random::Uniform dist_allele_freq(0.01, 0.5);
+  knoop::random::Normal dist_effects;
 
   std::size_t n_individuals = gbench_state.range(0);
   std::size_t n_loci = gbench_state.range(1);
   std::size_t n_phenotypes = gbench_state.range(2);
 
-  std::vector<Eigen::VectorXd> effects(n_phenotypes);
-  for (auto& effects_vec : effects) effects_vec = dist_effects.generate(n_loci);
-
   std::vector<std::size_t> iota_loci(n_loci);
   std::iota(iota_loci.begin(), iota_loci.end(), 0);
-  std::vector<std::vector<std::size_t>> loci(n_phenotypes, iota_loci);
 
-  knoop::Params params{
-      .geno =
-          {.n_loc = n_loci,
-           .locus_freq = dist_allele_freq.generate(n_loci),
-           .locus_rec = Eigen::VectorXd::Constant(n_loci, 0.5),
-           .locus_mut = Eigen::VectorXd::Constant(n_loci, 0.0)},
-      .pheno =
-          {.n_pheno = n_phenotypes,
-           .names = {},
-           .n_locs = std::move(std::vector<std::size_t>(n_phenotypes, n_loci)),
-           .pheno_ids = {},
-           .pheno_effects = effects,
-           .pheno_loc = loci,
-           .var_env = Eigen::VectorXd::Constant(n_phenotypes, 0.5),
-           .var_vert = Eigen::VectorXd::Constant(n_phenotypes, 0.0),
-           .gen_cor = Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
-           .env_cor = Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
-           .rnur_pat = Eigen::VectorXd::Constant(n_phenotypes, 0.5),
-           .rnur_env = Eigen::VectorXd::Constant(n_phenotypes, 0.5),
-           .vert_pat = Eigen::VectorXd::Constant(n_phenotypes, 0.5)},
-      .global =
-          {
-              .n_ind = n_individuals,
-              .n_gens = 1,
-          },
-  };
+  std::vector<knoop::Phenotype> phenotype_vec;
+  phenotype_vec.reserve(n_phenotypes);
+  for (std::size_t pheno = 0; pheno < n_phenotypes; ++pheno) {
+    phenotype_vec.emplace_back(
+        std::format("pheno{}", pheno),
+        n_loci,
+        dist_effects(n_loci),
+        0.0,
+        std::nullopt,
+        iota_loci,
+        0.5,
+        0.5,
+        0.0,
+        0.5);
+  }
+
+  knoop::GenomeParams genome(
+      n_loci,
+      dist_allele_freq(n_loci),
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      std::move(phenotype_vec),
+      Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
+      Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Random,
+      Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
+      0,
+      0);
+
+  knoop::Params params(
+      n_individuals,
+      1,
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},
+      {},
+      1,
+      1,
+      1,
+      false,
+      false,
+      1,
+      42,
+      std::filesystem::temp_directory_path(),
+      std::nullopt);
 
   knoop::State state = knoop::buildState(params);
   knoop::GenerateHaplotypes haplo(params);
@@ -228,42 +352,66 @@ static void BM_ScorePhenotypes_operator(benchmark::State& gbench_state) {
 }
 
 static void BM_PhenotypeBuffer_computeStats(benchmark::State& gbench_state) {
-  knoop::UniformDistribution dist_allele_freq(0.01, 0.5);
-  knoop::NormalDistribution dist_effects;
+  knoop::random::Uniform dist_allele_freq(0.01, 0.5);
+  knoop::random::Normal dist_effects;
 
   std::size_t n_individuals = gbench_state.range(0);
   std::size_t n_loci = gbench_state.range(1);
   std::size_t n_phenotypes = gbench_state.range(2);
 
-  std::vector<Eigen::VectorXd> effects(n_phenotypes);
-  for (auto& effects_vec : effects) effects_vec = dist_effects.generate(n_loci);
-
   std::vector<std::size_t> iota_loci(n_loci);
   std::iota(iota_loci.begin(), iota_loci.end(), 0);
-  std::vector<std::vector<std::size_t>> loci(n_phenotypes, iota_loci);
 
-  knoop::Params params{
-      .geno =
-          {.n_loc = n_loci,
-           .locus_freq = dist_allele_freq.generate(n_loci),
-           .locus_rec = Eigen::VectorXd::Constant(n_loci, 0.5),
-           .locus_mut = Eigen::VectorXd::Constant(n_loci, 0.0)},
-      .pheno =
-          {.n_pheno = n_phenotypes,
-           .names = {},
-           .n_locs = std::move(std::vector<std::size_t>(n_phenotypes, n_loci)),
-           .pheno_ids = {},
-           .pheno_effects = effects,
-           .pheno_loc = loci,
-           .var_env = Eigen::VectorXd::Constant(n_phenotypes, 0.5),
-           .var_vert = Eigen::VectorXd::Constant(n_phenotypes, 0.0),
-           .gen_cor = Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
-           .env_cor = Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
-           .rnur_pat = Eigen::VectorXd::Constant(n_phenotypes, 0.5),
-           .rnur_env = Eigen::VectorXd::Constant(n_phenotypes, 0.5),
-           .vert_pat = Eigen::VectorXd::Constant(n_phenotypes, 0.5)},
-      .global = {.n_ind = n_individuals, .n_gens = 1},
-  };
+  std::vector<knoop::Phenotype> phenotype_vec;
+  phenotype_vec.reserve(n_phenotypes);
+  for (std::size_t pheno = 0; pheno < n_phenotypes; ++pheno) {
+    phenotype_vec.emplace_back(
+        std::format("pheno{}", pheno),
+        n_loci,
+        dist_effects(n_loci),
+        0.0,
+        std::nullopt,
+        iota_loci,
+        0.5,
+        0.5,
+        0.0,
+        0.5);
+  }
+
+  knoop::GenomeParams genome(
+      n_loci,
+      dist_allele_freq(n_loci),
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      std::move(phenotype_vec),
+      Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
+      Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Random,
+      Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
+      0,
+      0);
+
+  knoop::Params params(
+      n_individuals,
+      1,
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},
+      {},
+      1,
+      1,
+      1,
+      false,
+      false,
+      1,
+      42,
+      std::filesystem::temp_directory_path(),
+      std::nullopt);
 
   knoop::State state = knoop::buildState(params);
   knoop::GenerateHaplotypes haplo(params);
@@ -286,41 +434,72 @@ static void BM_RunReplicate(benchmark::State& gbench_state) {
   std::size_t n_generations = gbench_state.range(3);
   std::size_t n_threads = gbench_state.range(4);
 
-  knoop::SimulationSpec spec;
+  knoop::random::Normal dist_effects;
 
-  // global options
-  spec.n_individuals = n_individuals;
-  spec.n_generations = n_generations;
-  spec.n_replicates = 1;
-  spec.n_workers = 1;
-  spec.n_threads_per_worker = n_threads;
-  spec.pedigree_max_depth = 1;
-  spec.pedigree_warmup = false;
-  spec.output_dir =
+  std::vector<std::size_t> iota_loci(n_loci);
+  std::iota(iota_loci.begin(), iota_loci.end(), 0);
+
+  std::vector<knoop::Phenotype> phenotype_vec;
+  phenotype_vec.reserve(n_phenotypes);
+  for (std::size_t pheno = 0; pheno < n_phenotypes; ++pheno) {
+    phenotype_vec.emplace_back(
+        std::format("pheno{}", pheno),
+        n_loci / n_phenotypes,
+        dist_effects(n_loci / n_phenotypes),
+        0.0,
+        std::nullopt,
+        std::nullopt,
+        0.5,
+        0.5,
+        0.0,
+        0.5);
+  }
+
+  knoop::GenomeParams genome(
+      n_loci,
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.5),
+      Eigen::VectorXd::Constant(n_loci, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      std::move(phenotype_vec),
+      Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes),
+      Eigen::MatrixXd::Identity(n_phenotypes, n_phenotypes));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Assortative,
+      knoop::utils::matrixFromSingularValues(
+          details::generateSingularValues(n_phenotypes, n_phenotypes, 0.5)),
+      0,
+      std::max<std::size_t>(10 * n_individuals, 50000),
+      1.0,
+      0.99,
+      true);
+
+  knoop::Params params(
+      n_individuals,
+      n_generations,
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},
+      {},
+      1,  // n_replicates
+      1,  // n_workers
+      n_threads,
+      false,
+      false,
+      1,
+      42,
       std::filesystem::temp_directory_path() /
-      std::format(
-          "knoop_bench_replicate_{}",
-          std::chrono::high_resolution_clock::now().time_since_epoch().count());
+          std::format(
+              "knoop_bench_replicate_{}",
+              std::chrono::high_resolution_clock::now()
+                  .time_since_epoch()
+                  .count()),
+      std::nullopt);
 
-  // genome options
-  spec.genome.n_loci = n_loci;
-  spec.genome.locus_freq = 0.5;
-  spec.genome.locus_rec = 0.5;
-  spec.genome.locus_mut = 0.0;
-
-  // phenotype options
-  spec.phenotypes.reserve(n_phenotypes);
-  for (std::size_t pheno = 0; pheno < n_phenotypes; ++pheno)
-    spec.phenotypes.push_back(
-        {.name = std::format("pheno{}", pheno),
-         .n_causal_loci = n_loci / n_phenotypes});
-
-  // mating options
-  spec.mating.type = "assortative";
-  spec.mating.mate_cor = knoop::utils::matrixFromSingularValues(
-      details::generateSingularValues(n_phenotypes, n_phenotypes, 0.5));
-
-  for (auto _ : gbench_state) knoop::runSimulation(spec);
+  for (auto _ : gbench_state) knoop::runSimulation(params);
 
   struct rusage ru;
   getrusage(RUSAGE_SELF, &ru);
@@ -354,21 +533,60 @@ static void BM_AssortativeMating_operator(benchmark::State& gbench_state) {
 
   double temp_decay = 0.99;
 
-  knoop::Params params{
-      .geno =
-          {.n_loc = 1,
-           .locus_freq = Eigen::VectorXd::Constant(1, 0.5),
-           .locus_rec = Eigen::VectorXd::Constant(1, 0.5),
-           .locus_mut = Eigen::VectorXd::Constant(1, 0.0)},
-      .pheno = {.n_pheno = n_pheno},
-      .mate =
-          {.mate_cor = knoop::utils::matrixFromSingularValues(svals),
-           .tol = 0,
-           .max_itr = max_itr,
-           .temp_init = 1.0,
-           .temp_decay = temp_decay,
-           .exact = true},
-      .global = {.n_ind = n_individuals, .n_gens = 1}};
+  // Create minimal phenotypes for mating benchmark
+  std::vector<knoop::Phenotype> phenotype_vec;
+  phenotype_vec.reserve(n_pheno);
+  for (std::size_t pheno = 0; pheno < n_pheno; ++pheno) {
+    phenotype_vec.emplace_back(
+        std::format("pheno{}", pheno),
+        1,
+        Eigen::VectorXd::Constant(1, 1.0),
+        0.0,
+        std::nullopt,
+        std::vector<std::size_t>{0},
+        0.5,
+        0.5,
+        0.0,
+        0.5);
+  }
+
+  knoop::GenomeParams genome(
+      1,
+      Eigen::VectorXd::Constant(1, 0.5),
+      Eigen::VectorXd::Constant(1, 0.5),
+      Eigen::VectorXd::Constant(1, 0.0));
+
+  knoop::PhenotypeParams phenotypes(
+      std::move(phenotype_vec),
+      Eigen::MatrixXd::Identity(n_pheno, n_pheno),
+      Eigen::MatrixXd::Identity(n_pheno, n_pheno));
+
+  knoop::MatingParams mating(
+      knoop::MatingType::Assortative,
+      knoop::utils::matrixFromSingularValues(svals),
+      0,        // tol
+      max_itr,  // max_itr
+      1.0,      // temp_init
+      temp_decay,
+      true);  // exact
+
+  knoop::Params params(
+      n_individuals,
+      1,
+      std::move(genome),
+      std::move(phenotypes),
+      std::move(mating),
+      {},
+      {},
+      1,
+      1,
+      1,
+      false,
+      false,
+      1,
+      42,
+      std::filesystem::temp_directory_path(),
+      std::nullopt);
 
   knoop::State state = knoop::buildState(params);
 

@@ -21,11 +21,11 @@
 #include <knoop/core/random.h>
 #include <knoop/core/state.h>
 #include <knoop/estimate/sample.h>
-#include <knoop/estimate/sample_factory.h>
 #include <knoop/io/parse.h>
 #include <knoop/sample/proband.h>
 #include <knoop/sample/sample.h>
 
+#include <bit>
 #include <filesystem>
 #include <numeric>
 #include <ranges>
@@ -57,8 +57,8 @@ inline std::uint8_t individualGenotypePLINK(
 }
 
 template <ProbandType P>
-inline void SampleFor<P>::attachEstimator(const SampleEstimatorSpec& spec) {
-  estimators.push_back(buildSampleEstimator<P>(spec));
+inline void SampleFor<P>::attachEstimator(const SampleEstimator& estimator) {
+  estimators.push_back(estimator);
 }
 
 /**
@@ -92,45 +92,51 @@ class Sampler {
         : eng(random::Xoshiro256pp::getInstance()),
           name(sample.name),
           n_probands(sample.n_probands),
-          sample_dir(params.global.out_dir / name),
-          of(sample.of),
-          include(sample.include),
-          agg(std::move(sample.agg)),
-          weighting(std::move(sample.weighting)),
-          decompress_genotypes(sample.decompress_genotypes),
+          sample_dir(params.outputDirectory() / name),
+          of(sample.members_of),
+          include(sample.members_include),
+          agg(std::move(sample.aggregator)),
+          weight(std::move(sample.weight)),
           n_probands_total(
-              P == ProbandType::Self ? params.global.n_ind
-                                     : params.global.n_ind / 2),
-          n_sex(params.global.n_ind / 2),
+              P == ProbandType::Self ? params.numIndividuals()
+                                     : params.numIndividuals() / 2),
+          n_sex(params.numIndividuals() / 2),
           n_of(
-              __builtin_popcountll(static_cast<ProbandEnumType<P>>(sample.of))),
-          n_pheno(params.pheno.n_pheno),
-          n_loc(params.geno.n_loc),
-          n_on(sample.on.has_value() ? sample.on.value().size() : 1),
+              std::popcount(
+                  static_cast<ProbandEnumType<P>>(sample.members_of))),
+          n_pheno(params.pheno.size()),
+          n_loc(params.geno.numLoci()),
+          n_on(
+              sample.phenotypes_on.has_value()
+                  ? sample.phenotypes_on.value().size()
+                  : 1),
           on_components(
-              sample.on_components.has_value()
-                  ? std::move(sample.on_components.value())
+              sample.phenotypes_components.has_value()
+                  ? std::move(sample.phenotypes_components.value())
                   : std::vector<Component>(n_on, Component::Total)),
           preaggregate(n_of, n_on),
           aggregates(n_probands_total, n_on),
           unif(n_probands_total),
           keys(n_probands_total),
-          names(params.pheno.names),
+          names(params.pheno.names()),
           phenotypes(sample.n_probands * kProbandSize<P>, n_pheno),
           selected(n_probands_total) {
       if (n_probands > n_probands_total)
-        throw std::runtime_error(
-            "n_probands (" + std::to_string(n_probands) + ") exceeds " +
-            "available sampling units (" + std::to_string(n_probands_total) +
-            ") for sample '" + name + "'");
+        throw KnoopRangeError(
+            "n_probands ({}) exceeds available sampling units ({}) "
+            "for sample '{}'",
+            n_probands,
+            n_probands_total,
+            name);
 
-      if (sample.on.has_value())
-        for (const auto& pheno_name : sample.on.value())
-          on_indices.push_back(params.pheno.pheno_ids.at(pheno_name));
+      if (sample.phenotypes_on.has_value())
+        for (const auto& pheno_name : sample.phenotypes_on.value())
+          on_indices.push_back(params.pheno.id(pheno_name));
 
       std::filesystem::create_directories(sample_dir);
       for (const auto& estimator : sample.estimators)
-        estimators.emplace_back(estimator(params, n_probands, sample_dir));
+        estimators.emplace_back(
+            estimator.template build<P>()(params, n_probands, sample_dir));
     };
 
     // tra-la-la
@@ -142,10 +148,9 @@ class Sampler {
     std::filesystem::path sample_dir;
     ProbandMemberEnum<P> of;
     ProbandMemberEnum<P> include;
-    AggFunction agg;
-    WeightFunction weighting;
+    Aggregator agg;
+    Weight weight;
     std::vector<std::unique_ptr<SampleEstimatorStrategy<P>>> estimators;
-    bool decompress_genotypes;
 
     // derived dimensions
     std::size_t n_probands_total;
@@ -194,7 +199,7 @@ class Sampler {
            {Component::Total,
             Component::Genetic,
             Component::Environmental,
-            Component::Vertical})
+            Component::Indirect})
         writePheno(state, comp);
     }
 
@@ -211,7 +216,9 @@ inline void Sampler::Model<P>::fillAggregates(const State& state) {
   if (on_indices.empty()) return;
 
   for (const Proband<P>& proband : getProbands<P>(state.pedigree)) {
-    // fill preaggregation buffer
+    /**
+     * fill preaggregation buffer
+     */
     for (std::size_t on = 0; on < n_on; ++on) {
       std::size_t pheno_id = on_indices[on];
       Component component = on_components[on];
@@ -228,7 +235,9 @@ inline void Sampler::Model<P>::fillAggregates(const State& state) {
       }
     }
 
-    // apply aggregation
+    /**
+     * apply aggregation
+     */
     aggregates.row(proband.id.index) = aggregate(preaggregate, agg);
   }
 }
@@ -270,7 +279,7 @@ inline void Sampler::Model<P>::writeBim() const {
 template <ProbandType P>
 inline void Sampler::Model<P>::writeBed(const State& state) const {
   if (state.geno().view() != BufferLayout::LocusMajor)
-    throw std::runtime_error(
+    throw KnoopBufferLayoutError(
         "Sampler::Model<P>::writeBED: require locus-major layout");
 
   // open the file
@@ -278,8 +287,9 @@ inline void Sampler::Model<P>::writeBed(const State& state) const {
       sample_dir / "data.bed", std::ios::out | std::ios::binary);
 
   if (!bed_file.is_open())
-    throw std::runtime_error(
-        "Could not open BED file stream " + (sample_dir / "data.bed").string());
+    throw KnoopIOError(
+        "Could not open BED file stream {}",
+        (sample_dir / "data.bed").string());
 
   // magic numbers
   bed_file.put(0x6c).put(0x1b).put(0x01);
@@ -345,9 +355,14 @@ inline void Sampler::Model<P>::writeFam(const State& state) const {
       std::string self_id =
           std::format("{}{}", proband.memberData(m).code, individual.index);
 
-      // check if father / mother are included before writing
-      std::string father_id = member_id(proband, individual.father());
-      std::string mother_id = member_id(proband, individual.mother());
+      /**
+       * check if father / mother are included before writing
+       */
+      bool at_max = individual.depth == state.pedigree.maxSize();
+      std::string father_id =
+          at_max ? member_id(proband, individual.father()) : "0";
+      std::string mother_id =
+          at_max ? member_id(proband, individual.mother()) : "0";
       int sex = individual.isMale() ? 1 : 2;
 
       table_fam.insertRow({fam_id, self_id, father_id, mother_id, sex, -9});
@@ -368,8 +383,8 @@ inline void Sampler::Model<P>::writePheno(
   std::fstream pheno_file(path, std::ios::out);
 
   if (!pheno_file.is_open())
-    throw std::runtime_error(
-        "Could not open PHENO file output stream " + path.string());
+    throw KnoopIOError(
+        "Could not open PHENO file output stream {}", path.string());
 
   std::string header = "FID\tIID";
   for (const std::string& pheno : names) header += "\t" + pheno;
@@ -405,14 +420,20 @@ inline void Sampler::Model<P>::writePheno(
 
 template <ProbandType P>
 inline void Sampler::Model<P>::draw(const State& state) {
-  // fill the aggregation buffer with phenotypes of the respective members
+  /**
+   * fill the aggregation buffer with phenotypes of the respective members
+   */
   fillAggregates(state);
 
-  // generate uniform weights for Efraimidis-Spirakis
+  /**
+   * generate uniform weights for Efraimidis-Spirakis
+   */
   random::Uniform::sample(eng, unif.data(), n_probands_total);
 
-  // run the weighting fn on the aggregation buffer
-  weighting(aggregates, keys);
+  /**
+   * run the weighting fn on the aggregation buffer
+   */
+  weight(aggregates, keys);
   keys = unif.array().pow(1.0 / keys.array());
 
   // NOLINTBEGIN(modernize-use-ranges)
@@ -443,14 +464,10 @@ inline void Sampler::Model<P>::operator()(const State& state) {
   estimate(state);
 }
 
-template struct Sampler::Model<ProbandType::Self>;
-template struct Sampler::Model<ProbandType::Mate>;
-template struct Sampler::Model<ProbandType::Family>;
-
 class ComputeSampleEstimates {
  public:
   explicit ComputeSampleEstimates(const Params& params) {
-    for (const auto& sample : params.estimate.samples)
+    for (const auto& sample : params.samples())
       estimators_.emplace_back(
           std::visit(
               [&params](auto&& spec) { return Sampler(spec, params); },

@@ -33,7 +33,7 @@ namespace knoop {
 class ComputePopulationEstimates {
  public:
   explicit ComputePopulationEstimates(const Params& params) {
-    for (const auto& factory : params.estimate.population_estimators)
+    for (const auto& factory : params.estimators())
       estimators_.emplace_back(factory(params));
   }
 

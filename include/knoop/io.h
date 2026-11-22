@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include <knoop/io/config.h>
 #include <knoop/io/hdf5.h>
 #include <knoop/io/parse.h>
 #include <knoop/io/table.h>

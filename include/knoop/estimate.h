@@ -27,8 +27,6 @@
 #include <knoop/estimate/pedigree_estimators.h>
 #include <knoop/estimate/phenome_estimators.h>
 #include <knoop/estimate/population.h>
-#include <knoop/estimate/population_factory.h>
 #include <knoop/estimate/sample.h>
 #include <knoop/estimate/sample_estimator.h>
-#include <knoop/estimate/sample_factory.h>
 #include <knoop/estimate/strategy.h>

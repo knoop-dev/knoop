@@ -27,47 +27,30 @@
 
 namespace knoop {
 
-// phenotype genetic component correlation optimiser
+/**
+ * \brief Induce pleiotropy in additive genetic components of phenotypes.
+ *
+ * \details Assigns overlapping causal loci for phenotypes so as to produce a
+ * correlation structure among the genetic components. This is done via a
+ * simulated annealing optimisation
+ */
 class InducePleiotropy {
- public:
-  explicit InducePleiotropy(Params& params)
-      : engine_(random::Xoshiro256pp::getInstance()),
-        n_pheno_(params.pheno.n_pheno),
-        n_loc_(params.geno.n_loc),
-        n_locs_(params.pheno.n_locs),
-        gen_cor_(params.pheno.gen_cor),
-        h2_gen_(params.pheno.var_gen),
-        pheno_effects_vec_(params.pheno.pheno_effects),
-        pheno_loc_(params.pheno.pheno_loc),
-        pheno_loc_complement_(n_pheno_),
-        pheno_effects_(n_loc_, n_pheno_),
-        pheno_fixed_(n_pheno_),
-        diff_cur_(n_pheno_, n_pheno_) {
-    gen_cov_ = h2_gen_.cwiseSqrt().asDiagonal() * gen_cor_ *
-               h2_gen_.cwiseSqrt().asDiagonal();
-    for (std::size_t pheno = 0; pheno < n_pheno_; ++pheno)
-      pheno_fixed_[pheno] = (n_locs_[pheno] == n_loc_);
-  }
-
-  double errFrobenius() const { return err_frob_opt_; }
-
-  Eigen::MatrixXd expected() const { return expected_; }
-
-  void operator()();
-
  private:
   boost::random::xoshiro256pp& engine_;
 
   const std::size_t n_pheno_;
   const std::size_t n_loc_;
-  const std::vector<std::size_t>& n_locs_;
-  const Eigen::MatrixXd& gen_cor_;
-  const Eigen::VectorXd& h2_gen_;
+  PhenotypeParams& phenotypes_; /** mutable since inducing pleiotropy */
   Eigen::MatrixXd gen_cov_;
-  const std::vector<Eigen::VectorXd>& pheno_effects_vec_;
-  std::vector<std::vector<std::size_t>>& pheno_loc_;
   std::vector<std::vector<std::size_t>> pheno_loc_complement_;
   Eigen::MatrixXd pheno_effects_;
+
+  /**
+   * If a phenotype is saturated in the genome (i.e., all loci are causal for
+   * the trait), it is not possible to perform swaps with the causal set and
+   * its complement. So we want to skip all such phenotypes when looping since
+   * the operation is useless.
+   */
   std::vector<bool> pheno_fixed_;
 
   std::size_t max_itr_ = 2e6;
@@ -107,6 +90,33 @@ class InducePleiotropy {
 
   // metropolis accept step and update
   void updateState();
+
+ public:
+  explicit InducePleiotropy(Params& params)
+      : engine_(random::Xoshiro256pp::getInstance()),
+        n_pheno_(params.pheno.size()),
+        n_loc_(params.geno.numLoci()),
+        phenotypes_(params.pheno),
+        pheno_loc_complement_(n_pheno_),
+        pheno_effects_(n_loc_, n_pheno_),
+        pheno_fixed_(n_pheno_),
+        diff_cur_(n_pheno_, n_pheno_) {
+    /**
+     * gen_cov_ seems to be the theoretical covariance matrix assuming that
+     * initial genotypes have unit variance, zero mean
+     */
+    gen_cov_ = phenotypes_.varGenetic().cwiseSqrt().asDiagonal() *
+               params.pheno.geneticComponentCorrelation() *
+               phenotypes_.varGenetic().cwiseSqrt().asDiagonal();
+    for (std::size_t pheno = 0; pheno < n_pheno_; ++pheno)
+      pheno_fixed_[pheno] = (params.pheno.numCausalLoci(pheno) == n_loc_);
+  }
+
+  double errFrobenius() const { return err_frob_opt_; }
+
+  Eigen::MatrixXd expected() const { return expected_; }
+
+  void operator()();
 };
 
 inline void InducePleiotropy::randomState() {
@@ -118,8 +128,8 @@ inline void InducePleiotropy::randomState() {
   // NOLINTEND(modernize-use-ranges)
 
   for (std::size_t pheno = 0; pheno < n_pheno_; ++pheno) {
-    std::size_t n_locs = n_locs_[pheno];
-    std::vector<std::size_t>& pheno_loc = pheno_loc_[pheno];
+    std::size_t n_locs = phenotypes_.numCausalLoci(pheno);
+    std::vector<std::size_t>& pheno_loc = phenotypes_.causalLoci(pheno);
     std::vector<std::size_t>& pheno_loc_complement =
         pheno_loc_complement_[pheno];
     std::unordered_set<std::size_t> added;
@@ -139,7 +149,7 @@ inline void InducePleiotropy::randomState() {
 
     // create the phenotype effect matrix wrt the assignment
     for (std::size_t loc = 0; loc < n_locs; ++loc)
-      pheno_effects_(pheno_loc[loc], pheno) = pheno_effects_vec_[pheno][loc];
+      pheno_effects_(pheno_loc[loc], pheno) = phenotypes_.effects(pheno)[loc];
   }
 }
 
@@ -158,10 +168,11 @@ inline void InducePleiotropy::proposeState() {
     pheno_cur_ = random::UniformInt::sample(engine_, 0, n_pheno_);
   } while (pheno_fixed_[pheno_cur_]);
 
-  loc_ind_cur_ = random::UniformInt::sample(engine_, 0, n_locs_[pheno_cur_]);
-  loc_ind_prop_ =
-      random::UniformInt::sample(engine_, 0, n_loc_ - n_locs_[pheno_cur_]);
-  loc_cur_ = pheno_loc_[pheno_cur_][loc_ind_cur_];
+  loc_ind_cur_ = random::UniformInt::sample(
+      engine_, 0, phenotypes_.numCausalLoci(pheno_cur_));
+  loc_ind_prop_ = random::UniformInt::sample(
+      engine_, 0, n_loc_ - phenotypes_.numCausalLoci(pheno_cur_));
+  loc_cur_ = phenotypes_.causalLoci(pheno_cur_)[loc_ind_cur_];
   loc_prop_ = pheno_loc_complement_[pheno_cur_][loc_ind_prop_];
 
   double gamma_prop = pheno_effects_(loc_cur_, pheno_cur_);
@@ -187,7 +198,7 @@ inline void InducePleiotropy::updateState() {
   if (u < acc_prob) {
     // update the locus masks and effect matrix
     std::swap(
-        pheno_loc_[pheno_cur_][loc_ind_cur_],
+        phenotypes_.causalLoci(pheno_cur_)[loc_ind_cur_],
         pheno_loc_complement_[pheno_cur_][loc_ind_prop_]);
     std::swap(
         pheno_effects_.col(pheno_cur_)(loc_cur_),

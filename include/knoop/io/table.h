@@ -51,9 +51,12 @@ constexpr bool sameName() {
     return false;
 }
 
+/**
+ * Compile time column types
+ */
 template <FixedString ColumnName, typename ColumnType>
 struct Column {
-  static constexpr FixedString Name = ColumnName;
+  static constexpr FixedString kName = ColumnName;
   using Type = ColumnType;
 };
 
@@ -61,8 +64,8 @@ template <FixedString Name, typename... Columns>
 constexpr std::size_t columnIndex() {
   std::size_t result = sizeof...(Columns);
   std::size_t index = 0;
-  (void)((sameName<Columns::Name, Name>() ? (result = index, true)
-                                          : (++index, false)) ||
+  (void)((sameName<Columns::kName, Name>() ? (result = index, true)
+                                           : (++index, false)) ||
          ...);
   return result;
 }
@@ -79,16 +82,48 @@ using Row = std::tuple<typename Columns::Type...>;
 template <typename... Columns>
 using DataTable = std::tuple<std::vector<typename Columns::Type>...>;
 
+/**
+ * Dynamic column types – these are declared with names which are runtime
+ * strings, not FixedString
+ *
+ * e.g. ColumnXd<double>("pheno_height");
+ *
+ * will allow us to parse for example .pheno files, and more generally construct
+ * a table / data frame class that can dynamically infer column names, so
+ * external user estimators and data importing is more smooth. For example, we
+ * can drop --row-names --col-names as well as --n-rows --n-cols. Instead of
+ * this forced specification, knoop infers dimensions, names, and types of the
+ * output data.
+ *
+ * Will also require that summarisation is reworked. It seems natural to make
+ * columns be stateful as well (as in, holding data in memory) so that we can
+ * define a ColumnXd::summarise() method that is implemented for each type.
+ *
+ * For numerical types, we are interested in data such as the mean, median,
+ * standard deviation, confidence intervals. For strings, counts, mode, etc.
+ *
+ * Question is whether there is any benefit to compile-time columns — very
+ * likely not. However we can benchmark. Mixing together the two might be
+ * slightly complicated due to type erasure of the variadic pack.
+ */
+template <typename ColumnType>
+struct ColumnXd {
+  explicit ColumnXd(std::string name_) : name(std::move(name_)) {}
+
+  std::string name;
+  using Type = ColumnType;
+};
+
 template <typename... Columns>
 class Table {
   static_assert(sizeof...(Columns) > 0, "Table must have at least one column");
 
  public:
-  Table() : col_names_{std::string(Columns::Name.data)...} {}
+  Table() : col_names_{std::string(Columns::kName.data)...} {}
 
   explicit Table(DataTable<Columns...> table)
       : data_(std::move(table)),
-        col_names_{std::string(Columns::Name.data)...} {}
+        col_names_{std::string(Columns::kName.data)...} {}
 
   std::size_t numRows() const { return std::get<0>(data_).size(); }
 
@@ -128,8 +163,7 @@ inline void Table<Columns...>::createColumnIndex(
   for (std::size_t el = 0; el < col_raw_index_.size(); ++el) {
     auto it = std::ranges::find(header_cols, col_names_[el]);
     if (it == header_cols.end())
-      throw std::runtime_error(
-          std::format("Column '{}' not found", col_names_[el]));
+      throw KnoopIOError("Column '{}' not found", col_names_[el]);
     col_raw_index_[el] = std::distance(header_cols.begin(), it);
   }
 }
@@ -151,8 +185,7 @@ inline void Table<Columns...>::readFile(
       std::getline(file, line);
       createColumnIndex(line, col_sep);
     } catch (const std::exception& e) {
-      throw std::runtime_error(
-          std::format("{} in file {}", e.what(), path.string()));
+      throw KnoopIOError("{} in file {}", e.what(), path.string());
     }
   } else {
     std::iota(col_raw_index_.begin(), col_raw_index_.end(), 0);
@@ -160,13 +193,15 @@ inline void Table<Columns...>::readFile(
 
   while (std::getline(file, line, row_sep)) {
     std::vector<std::string> row_data = utils::splitString(line, col_sep);
-    // for each column type, access it at it's prescribed index in the raw data,
-    // call parse on it with the parse<T> functionality, and push it to its
-    // respective slot in the column index
-    (std::get<columnIndex<Columns::Name, Columns...>()>(data_).push_back(
+    /**
+     * for each column type, access it at its prescribed index in the raw data,
+     * call parse on it with the parse<T> functionality, and push it to its
+     * respective slot in the column index
+     */
+    (std::get<columnIndex<Columns::kName, Columns...>()>(data_).push_back(
          parse<typename Columns::Type>(
              row_data
-                 [col_raw_index_[columnIndex<Columns::Name, Columns...>()]])),
+                 [col_raw_index_[columnIndex<Columns::kName, Columns...>()]])),
      ...);
   }
 }
@@ -176,13 +211,13 @@ inline Row<Columns...> Table<Columns...>::row(std::size_t i) const {
   // tuples are essentially reference containers, so declaration /
   // initialisation must take place inside of the fold expression
   return Row<Columns...>{
-      std::get<columnIndex<Columns::Name, Columns...>()>(data_)[i]...};
+      std::get<columnIndex<Columns::kName, Columns...>()>(data_)[i]...};
 }
 
 template <typename... Columns>
 inline void Table<Columns...>::insertRow(Row<Columns...> row) {
-  (std::get<columnIndex<Columns::Name, Columns...>()>(data_).push_back(
-       std::get<columnIndex<Columns::Name, Columns...>()>(row)),
+  (std::get<columnIndex<Columns::kName, Columns...>()>(data_).push_back(
+       std::get<columnIndex<Columns::kName, Columns...>()>(row)),
    ...);
 }
 
@@ -234,7 +269,8 @@ inline void writeTable(
     char row_sep = '\n',
     bool include_header = true) {
   if constexpr (sizeof...(Subset) == 0) {
-    writeTable<Columns::Name...>(table, path, col_sep, row_sep, include_header);
+    writeTable<Columns::kName...>(
+        table, path, col_sep, row_sep, include_header);
     return;
   }
 
@@ -318,17 +354,14 @@ inline void TableXd<Columns...>::readFile(
 
   if (has_header) {
     std::array<std::string, sizeof...(Columns)> col_names{
-        std::string(Columns::Name.data)...};
+        std::string(Columns::kName.data)...};
     std::getline(file, line);
     std::vector<std::string> header_cols = utils::splitString(line, col_sep);
     for (std::size_t el = 0; el < raw_index.size(); ++el) {
       auto it = std::ranges::find(header_cols, col_names[el]);
       if (it == header_cols.end())
-        throw std::runtime_error(
-            std::format(
-                "Column '{}' not found in file {}",
-                col_names[el],
-                path.string()));
+        throw KnoopIOError(
+            "Column '{}' not found in file {}", col_names[el], path.string());
       raw_index[el] = std::distance(header_cols.begin(), it);
     }
 
@@ -351,11 +384,11 @@ inline void TableXd<Columns...>::readFile(
   while (std::getline(file, line, row_sep)) {
     std::vector<std::string> row_data = utils::splitString(line, col_sep);
 
-    (std::get<columnIndex<Columns::Name, Columns...>()>(known_data)
+    (std::get<columnIndex<Columns::kName, Columns...>()>(known_data)
          .push_back(
              parse<typename Columns::Type>(
                  row_data
-                     [raw_index[columnIndex<Columns::Name, Columns...>()]])),
+                     [raw_index[columnIndex<Columns::kName, Columns...>()]])),
      ...);
 
     bool first = true;
@@ -382,8 +415,8 @@ inline std::vector<std::string> TableXd<Columns...>::resolveBufNames(
   if (buf_names.has_value() &&
       static_cast<Eigen::Index>(buf_names.value().size()) != buf_.cols()) {
     Log::error(
-        "TableXd::writeFile: {} names given for {} matrix columns — "
-        "falling back to numeric column headers",
+        "TableXd::writeFile: {} names given for {} matrix columns — falling "
+        "back to numeric column headers",
         buf_names.value().size(),
         buf_.cols());
     buf_names.reset();
@@ -421,7 +454,7 @@ inline void TableXd<Columns...>::writeFile(
   };
 
   if (include_header) {
-    std::vector<std::string> header{std::string(Columns::Name.data)...};
+    std::vector<std::string> header{std::string(Columns::kName.data)...};
     header.insert(header.end(), names.begin(), names.end());
     join(header);
   }
@@ -432,7 +465,7 @@ inline void TableXd<Columns...>::writeFile(
     (tokens.push_back(
          std::format(
              "{}",
-             std::get<columnIndex<Columns::Name, Columns...>()>(known_row))),
+             std::get<columnIndex<Columns::kName, Columns...>()>(known_row))),
      ...);
     for (Eigen::Index c = 0; c < buf_.cols(); ++c)
       tokens.push_back(std::format("{}", buf_(r, c)));

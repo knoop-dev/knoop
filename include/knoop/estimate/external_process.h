@@ -17,8 +17,10 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
 #include <knoop/core/log.h>
 #include <knoop/core/utils.h>
+#include <omp.h>
 
 #include <boost/asio.hpp>
 #include <boost/process.hpp>
@@ -46,36 +48,65 @@ inline bp::filesystem::path resolveExecutable(const std::string& s) {
     bp::filesystem::path exec_abs = bp::filesystem::absolute(exec);
     if (!bp::filesystem::exists(exec_abs) ||
         access(exec_abs.c_str(), X_OK) != 0)
-      throw std::runtime_error(
-          std::format("{} is not an executable file", exec_abs.string()));
+      throw KnoopIOError("{} is not an executable file", exec_abs.string());
     return exec_abs;
   }
 
   // otherwise, search PATH for the executable
   auto found = bp::environment::find_executable(exec);
   if (found.empty())
-    throw std::runtime_error(
-        std::format("Executable {} not found in PATH", exec.string()));
+    throw KnoopIOError("Executable {} not found in PATH", exec.string());
   return found;
 }
 
+/**
+ * \brief Spawn a process
+ *
+ * \param cmd Boost process command to be run
+ * \param args Argument vector which are appended to the call
+ * \param multithread If enabled, redirects knoop's OMP threads towards this
+ * resource while it is run.
+ *
+ * \return ProcessResult struct to look into error code and stdout/stderr from
+ * the spawned subprocess
+ */
 inline ProcessResult runProcess(
-    const bp::filesystem::path& cmd, const std::vector<std::string>& args) {
+    const bp::filesystem::path& cmd,
+    const std::vector<std::string>& args,
+    bool multithread = false) {
   asio::io_context ctx;
   asio::readable_pipe pipe{ctx};
   std::string pipe_buf;
 
-  // launch the process
+  /**
+   * if multithreading is enabled, sleep the OMP threads so that the subprocess
+   * can claim the threads that the worker is using
+   *
+   * this branch runs only in the event that omp_pause_resource_all fails to
+   * pause resources, which should be understood as an error
+   */
+  if (multithread && omp_pause_resource_all(omp_pause_soft))
+    throw KnoopGenericError("Encountered error while pausing OMP threads");
+
+  /** launch the process */
   bp::process proc(ctx, cmd, args, bp::process_stdio{.out = pipe, .err = pipe});
 
-  // read in stdout + stderr
+  /**
+   * read in stdout + stderr – this must be done asynchronously, because a
+   * SIGCHLD from the process will interrupt blocking system calls, such as
+   * synchronous reads
+   */
   boost::system::error_code ec;
-  asio::read(pipe, asio::dynamic_buffer(pipe_buf), ec);
+  asio::async_read(
+      pipe, asio::dynamic_buffer(pipe_buf), [](const auto& ec, auto bytes) {});
+
+  ctx.run();
 
   if (ec && (ec != asio::error::eof))
-    throw std::runtime_error(
-        std::format(
-            "process {} failed to parse stdout / stderr output", cmd.string()));
+    throw KnoopIOError(
+        "process {} failed to parse stdout / stderr output (error code {})",
+        cmd.string(),
+        ec.to_string());
 
   proc.wait();
 

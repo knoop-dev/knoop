@@ -34,8 +34,8 @@ class EstimatorHeritabilityStrategy : public PopulationEstimatorStrategy {
  public:
   explicit EstimatorHeritabilityStrategy(const Params& params)
       : PopulationEstimatorStrategy(
-            "pheno_h2", {}, params.pheno.names, params.pheno.n_pheno) {
-    n_pheno_ = params.pheno.n_pheno;
+            "pheno_h2", {}, params.pheno.names(), params.pheno.size()) {
+    n_pheno_ = params.pheno.size();
   }
 
   void compute(const State& state) override {
@@ -54,10 +54,10 @@ class EstimatorComponentMeanStrategy : public PopulationEstimatorStrategy {
       : PopulationEstimatorStrategy(
             "pheno_" + componentToString(type) + "_mean",
             {},
-            params.pheno.names,
-            params.pheno.n_pheno),
+            params.pheno.names(),
+            params.pheno.size()),
         type_(type),
-        n_pheno_(params.pheno.n_pheno) {}
+        n_pheno_(params.pheno.size()) {}
 
   void compute(const State& state) override {
     for (std::size_t pheno = 0; pheno < n_pheno_; ++pheno)
@@ -75,10 +75,10 @@ class EstimatorComponentVarStrategy : public PopulationEstimatorStrategy {
       : PopulationEstimatorStrategy(
             "pheno_" + componentToString(type) + "_var",
             {},
-            params.pheno.names,
-            params.pheno.n_pheno),
+            params.pheno.names(),
+            params.pheno.size()),
         type_(type),
-        n_pheno_(params.pheno.n_pheno) {}
+        n_pheno_(params.pheno.size()) {}
 
   void compute(const State& state) override {
     for (std::size_t pheno = 0; pheno < n_pheno_; ++pheno)
@@ -98,14 +98,14 @@ class EstimatorComponentCorStrategy : public PopulationEstimatorStrategy {
             "pheno_" + componentToString(type_l) + "_" +
                 componentToString(type_r.value_or(type_l)) + "_cor",
             utils::vectorSuffix(
-                params.pheno.names, "_" + componentToString(type_l)),
+                params.pheno.names(), "_" + componentToString(type_l)),
             utils::vectorSuffix(
-                params.pheno.names,
+                params.pheno.names(),
                 "_" + componentToString(type_r.value_or(type_l))),
-            params.pheno.n_pheno,
-            params.pheno.n_pheno),
-        n_ind_(params.global.n_ind),
-        n_pheno_(params.pheno.n_pheno),
+            params.pheno.size(),
+            params.pheno.size()),
+        n_ind_(params.numIndividuals()),
+        n_pheno_(params.pheno.size()),
         type_l_(type_l),
         type_r_(type_r.value_or(type_l)),
         std_l_(n_ind_, n_pheno_),
@@ -134,14 +134,14 @@ class EstimatorComponentCovStrategy : public PopulationEstimatorStrategy {
             "pheno_" + componentToString(type_l) + "_" +
                 componentToString(type_r.value_or(type_l)) + "_cov",
             utils::vectorSuffix(
-                params.pheno.names, "_" + componentToString(type_l)),
+                params.pheno.names(), "_" + componentToString(type_l)),
             utils::vectorSuffix(
-                params.pheno.names,
+                params.pheno.names(),
                 "_" + componentToString(type_r.value_or(type_l))),
-            params.pheno.n_pheno,
-            params.pheno.n_pheno),
-        n_ind_(params.global.n_ind),
-        n_pheno_(params.pheno.n_pheno),
+            params.pheno.size(),
+            params.pheno.size()),
+        n_ind_(params.numIndividuals()),
+        n_pheno_(params.pheno.size()),
         type_l_(type_l),
         type_r_(type_r.value_or(type_l)),
         centred_l_(n_ind_, n_pheno_),

@@ -27,8 +27,8 @@ namespace knoop {
 class GenerateHaplotypes {
  public:
   explicit GenerateHaplotypes(const Params& params)
-      : random_seed_(params.global.random_seed),
-        loc_maf_(params.geno.locus_freq) {};
+      : random_seed_(params.randomSeed()),
+        loc_maf_(params.geno.locusFrequencies()) {};
 
   void operator()(State& state);
 
@@ -41,7 +41,7 @@ inline void GenerateHaplotypes::operator()(State& state) {
   GenotypeBuffer& buf = state.geno();
 
   if (buf.view() != BufferLayout::LocusMajor)
-    throw std::runtime_error("generate haplotypes in loc-major view");
+    throw KnoopBufferLayoutError("generate haplotypes in loc-major view");
 
   HaplotypeBuffer& h0 = buf.paternal();
   HaplotypeBuffer& h1 = buf.maternal();

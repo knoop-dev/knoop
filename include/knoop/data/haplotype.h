@@ -65,7 +65,7 @@ inline void bitMatrixTranspose(std::uint64_t* matrix) {
  *
  * \details In knoop, haplotypes are stored in either locus or individual major
  * layout. In locus major layout, individuals' haplotypes are bit-packed into
- * 64-bit unsigned integers, such that within a single locus `l`, the `j`th word
+ * 64-bit unsigned integers, such that within a single locus `l`, the word `j`
  * contains the haplotypes of individuals with indices between `64 * j` and
  * `64 * j + 63`.
  *
@@ -78,10 +78,8 @@ inline void bitMatrixTranspose(std::uint64_t* matrix) {
  * \see GenotypeBuffer
  */
 enum class BufferLayout : bool {
-  /** \brief Rows consist of */
   LocusMajor,
 
-  /** */
   IndividualMajor
 };
 
@@ -161,7 +159,12 @@ class HaplotypeBuffer {
   const std::size_t n_loci_;
   std::size_t n_rows_;
   std::size_t n_words_{};
+
+  /** Buffer to hold transposition blocks */
+  std::vector<std::uint64_t> out_;
+
   std::vector<std::uint64_t> buf_;
+
   BufferLayout layout_{};
 };
 
@@ -186,7 +189,7 @@ inline void HaplotypeBuffer::transpose() noexcept {
           ? ((n_loci_ + kWordSize - 1) / kWordSize)
           : ((n_individuals_ + kWordSize - 1) / kWordSize);
 
-  // allocate destination buffer
+  /** allocate destination buffer */
   std::vector<std::uint64_t> out(dst_rows * dst_cols_w, 0);
 
   // src_rows is multiple of 64 by construction

@@ -17,6 +17,9 @@
 
 #pragma once
 
-#include <knoop/data/genome.h>
+#include <knoop/data/component.h>
+#include <knoop/data/genotype.h>
+#include <knoop/data/haplotype.h>
 #include <knoop/data/matching.h>
+#include <knoop/data/pedigree.h>
 #include <knoop/data/phenome.h>
