@@ -11,18 +11,24 @@
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU General Public Licensegenome.cc
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
+#include <knoop/core/error.h>
 #include <omp.h>
 
 #include <Eigen/Dense>
 #include <array>
+#include <boost/random/beta_distribution.hpp>
+#include <boost/random/cauchy_distribution.hpp>
+#include <boost/random/gamma_distribution.hpp>
 #include <boost/random/geometric_distribution.hpp>
+#include <boost/random/laplace_distribution.hpp>
 #include <boost/random/normal_distribution.hpp>
+#include <boost/random/student_t_distribution.hpp>
 #include <boost/random/uniform_real_distribution.hpp>
 #include <boost/random/xoshiro.hpp>
 #include <chrono>
@@ -50,7 +56,6 @@ struct Xoshiro256pp {
     boost::random::splitmix64 mix(seed);
     mix.discard(n_skip);
     engine.seed(mix());
-
     for (int thr = 0; thr < omp_get_thread_num(); ++thr) engine.jump();
   }
 
@@ -77,11 +82,10 @@ inline std::uint16_t probThreshold(double p) {
   constexpr double kMin = 0x1p-16;
 
   if (p <= kMin)
-    throw std::range_error(
-        std::format(
-            "random::probThreshold: Specified probability {} falls below "
-            "granularity of RNG mechanism (threshold: 2^-16, ~1.53e-5)",
-            p));
+    throw KnoopRangeError(
+        "Specified probability {} falls below "
+        "granularity of RNG mechanism (threshold: 2^-16, ~1.53e-5)",
+        p);
 
   return static_cast<std::uint16_t>(std::lround(p * kScale));
 }
@@ -181,143 +185,315 @@ inline std::uint64_t bernoulliWord(
   return word & (~0ULL >> (kWordLength - n_valid_bits));
 }
 
-class Normal {
+/**
+ * \brief Generic probability distribution class for random number generation
+ *
+ * \details Probability distributions in knoop rely on Boost's random library,
+ * specifically the Xoshiro256pp engine. This class is somewhat nuanced in
+ * implementation as we want to allow static calls
+ */
+template <typename Derived>
+class Distribution {
  public:
+  /** \brief Draw a single random variate */
+  template <typename... DistParams>
   static double sample(
-      boost::random::xoshiro256pp& engine,
-      double location = 0,
-      double scale = 1) {
-    return location + (scale * dist_(engine));
-  }
+      boost::random::xoshiro256pp& engine, DistParams&&... dist_args);
 
-  static Eigen::VectorXd sample(
-      boost::random::xoshiro256pp& engine,
-      std::size_t n,
-      double location = 0,
-      double scale = 1) {
-    Eigen::VectorXd samples(n);
-    for (std::size_t el = 0; el < n; ++el)
-      samples[el] = sample(engine, location, scale);
-    return samples;
-  }
-
+  /** \brief Fill a container of doubles with random variate draws */
+  template <typename... DistParams>
   static void sample(
       boost::random::xoshiro256pp& engine,
       double* buf,
       std::size_t n,
-      double location = 0,
-      double scale = 1) {
-    for (std::size_t el = 0; el < n; ++el)
-      buf[el] = sample(engine, location, scale);
-  }
+      DistParams&&... params);
+
+  /** \brief Draw a vector of randomvariates */
+  template <typename... DistParams>
+  static Eigen::VectorXd sample(
+      boost::random::xoshiro256pp& engine,
+      std::size_t n,
+      DistParams&&... params);
 
  private:
-  inline static thread_local boost::random::normal_distribution<double> dist_{};
-
-  static double checkScale(double scale) {
-    if (scale <= 0)
-      throw std::invalid_argument(
-          "random::Normal: scale parameter must be positive");
-    return scale;
-  }
+  friend Derived;
+  Distribution() = default;
 };
 
-class Uniform {
+template <typename Derived>
+template <typename... DistParams>
+inline double Distribution<Derived>::sample(
+    boost::random::xoshiro256pp& engine, DistParams&&... params) {
+  return Derived::draw(engine, std::forward<DistParams>(params)...);
+}
+
+template <typename Derived>
+template <typename... DistParams>
+inline void Distribution<Derived>::sample(
+    boost::random::xoshiro256pp& engine,
+    double* buf,
+    std::size_t n,
+    DistParams&&... params) {
+  for (std::size_t el = 0; el < n; ++el)
+    buf[el] = Derived::draw(engine, std::forward<DistParams>(params)...);
+}
+
+template <typename Derived>
+template <typename... DistParams>
+inline Eigen::VectorXd Distribution<Derived>::sample(
+    boost::random::xoshiro256pp& engine,
+    std::size_t n,
+    DistParams&&... params) {
+  Eigen::VectorXd result(n);
+  sample(engine, result.data(), n, std::forward<DistParams>(params)...);
+  return result;
+}
+
+class Uniform : public Distribution<Uniform> {
  public:
-  static double sample(
+  using Distribution<Uniform>::sample;
+
+  explicit Uniform(double lo = 0, double hi = 1) : lo_(lo), hi_(hi) {}
+
+  static double draw(
       boost::random::xoshiro256pp& engine, double lo = 0, double hi = 1) {
-    return lo + ((hi - lo) * dist_(engine));
+    thread_local static boost::random::uniform_01<double> unit;
+    return lo + ((hi - lo) * unit(engine));
   }
 
-  static Eigen::VectorXd sample(
-      boost::random::xoshiro256pp& engine,
-      std::size_t n,
-      double lo = 0,
-      double hi = 1) {
-    Eigen::VectorXd samples(n);
-    for (std::size_t el = 0; el < n; ++el) samples[el] = sample(engine, lo, hi);
-    return samples;
+  Eigen::VectorXd operator()(
+      boost::random::xoshiro256pp& engine, std::size_t n) const {
+    return Uniform::sample(engine, n, lo_, hi_);
   }
 
-  static void sample(
-      boost::random::xoshiro256pp& engine,
-      double* buf,
-      std::size_t n,
-      double lo = 0,
-      double hi = 1) {
-    for (std::size_t el = 0; el < n; ++el) buf[el] = sample(engine, lo, hi);
+  Eigen::VectorXd operator()(std::size_t n) const {
+    return Uniform::sample(Xoshiro256pp::getInstance(), n, lo_, hi_);
   }
 
  private:
-  inline static thread_local boost::random::uniform_01<double> dist_{};
+  double lo_;
+  double hi_;
 };
 
 class UniformInt {
  public:
   static std::size_t sample(
       boost::random::xoshiro256pp& engine, std::size_t lo, std::size_t hi) {
-    if (hi < lo) throw std::runtime_error("[hi, lo) must be non-empty");
-    if (hi == lo) return lo;
-
-    const std::size_t thresh = UINT64_MAX - (UINT64_MAX % (hi - lo));
-    std::size_t x;
-
+    std::size_t range = hi - lo;
+    std::uint64_t thresh = UINT64_MAX - (UINT64_MAX % range);
+    std::uint64_t x;
     do {
       x = engine.next();
     } while (x >= thresh);
-
-    return (x % (hi - lo)) + lo;
-  }
-
-  static std::vector<std::size_t> sample(
-      boost::random::xoshiro256pp& engine,
-      std::size_t n,
-      std::size_t lo,
-      std::size_t hi) {
-    std::vector<std::size_t> samples(n);
-    for (std::size_t el = 0; el < n; ++el) samples[el] = sample(engine, lo, hi);
-    return samples;
-  }
-
-  static void sample(
-      boost::random::xoshiro256pp& engine,
-      std::size_t* buf,
-      std::size_t n,
-      std::size_t lo,
-      std::size_t hi) {
-    for (std::size_t el = 0; el < n; ++el) buf[el] = sample(engine, lo, hi);
+    return (x % range) + lo;
   }
 };
 
-/**
- * stateful on parametrisation on probability family, so this can't be static
- * like the unstateful classes
- */
-class Geometric {
+class Rademacher : public Distribution<Rademacher> {
  public:
-  explicit Geometric(double p) : dist_(checkP(p)) {}
+  using Distribution<Rademacher>::sample;
 
-  double sample(boost::random::xoshiro256pp& engine) { return dist_(engine); }
+  Rademacher() : Distribution() {}
 
-  Eigen::VectorXd sample(boost::random::xoshiro256pp& engine, std::size_t n) {
-    Eigen::VectorXd samples(n);
-    for (std::size_t el = 0; el < n; ++el) samples[el] = dist_(engine);
-    return samples;
+  static double draw(boost::random::xoshiro256pp& engine) {
+    thread_local static boost::random::uniform_01<double> unit;
+    return engine.next() & 1ULL ? 1.0 : -1.0;
   }
 
-  void sample(boost::random::xoshiro256pp& engin, double* buf, std::size_t n) {
-    for (std::size_t el = 0; el < n; ++el) buf[el] = dist_(engin);
+  Eigen::VectorXd operator()(
+      boost::random::xoshiro256pp engine, std::size_t n) const {
+    return Rademacher::sample(engine, n);
+  }
+
+  Eigen::VectorXd operator()(std::size_t n) const {
+    return Rademacher::sample(Xoshiro256pp::getInstance(), n);
+  }
+};
+
+class Normal : public Distribution<Normal> {
+ public:
+  using Distribution<Normal>::sample;
+
+  explicit Normal(double location = 0, double scale = 1)
+      : location_(location), scale_(scale) {}
+
+  static double draw(
+      boost::random::xoshiro256pp& engine,
+      double location = 0,
+      double scale = 1) {
+    thread_local static boost::random::normal_distribution<> dist(0, 1);
+    return location + (std::sqrt(scale) * dist(engine));
+  }
+
+  Eigen::VectorXd operator()(
+      boost::random::xoshiro256pp& engine, std::size_t n) const {
+    return Normal::sample(engine, n, location_, scale_);
+  }
+
+  Eigen::VectorXd operator()(std::size_t n) const {
+    return Normal::sample(Xoshiro256pp::getInstance(), n, location_, scale_);
   }
 
  private:
-  boost::random::geometric_distribution<std::uint64_t, double> dist_;
+  double location_;
+  double scale_;
+};
 
-  static double checkP(double p) {
-    if (p <= 0.0 || p >= 1.0)
-      throw std::invalid_argument(
-          std::format("random::Geometric: p must lie in (0, 1), got {}", p));
-    return p;
+class Beta : public Distribution<Beta> {
+ public:
+  using Distribution<Beta>::sample;
+
+  explicit Beta(double shape1 = 4, double shape2 = 4)
+      : shape1_(shape1), shape2_(shape2) {}
+
+  static double draw(
+      boost::random::xoshiro256pp& engine,
+      double shape1 = 4,
+      double shape2 = 4) {
+    thread_local static boost::random::beta_distribution<> dist(4, 4);
+    thread_local static double dist_shape1 = 4;
+    thread_local static double dist_shape2 = 4;
+
+    if (shape1 != dist_shape1 || shape2 != dist_shape2) {
+      dist.param(decltype(dist)::param_type(shape1, shape2));
+      dist_shape1 = shape1;
+      dist_shape2 = shape2;
+    }
+
+    return dist(engine);
   }
+
+  Eigen::VectorXd operator()(
+      boost::random::xoshiro256pp& engine, std::size_t n) const {
+    return Beta::sample(engine, n, shape1_, shape2_);
+  }
+
+  Eigen::VectorXd operator()(std::size_t n) const {
+    return Beta::sample(Xoshiro256pp::getInstance(), n, shape1_, shape2_);
+  }
+
+ private:
+  double shape1_;
+  double shape2_;
+};
+
+class Gamma : public Distribution<Gamma> {
+ public:
+  using Distribution<Gamma>::sample;
+
+  explicit Gamma(double shape = 1, double scale = 1)
+      : shape_(shape), scale_(scale) {}
+
+  static double draw(
+      boost::random::xoshiro256pp& engine, double shape = 1, double scale = 1) {
+    thread_local static boost::random::gamma_distribution<> dist(1, 1);
+    thread_local static double dist_shape = 1;
+    thread_local static double dist_scale = 1;
+
+    if (shape != dist_shape || scale != dist_scale) {
+      dist.param(decltype(dist)::param_type(shape, scale));
+      dist_shape = shape;
+      dist_scale = scale;
+    }
+
+    return dist(engine);
+  }
+
+  Eigen::VectorXd operator()(
+      boost::random::xoshiro256pp& engine, std::size_t n) const {
+    return Gamma::sample(engine, n, shape_, scale_);
+  }
+
+  Eigen::VectorXd operator()(std::size_t n) const {
+    return Gamma::sample(Xoshiro256pp::getInstance(), n, shape_, scale_);
+  }
+
+ private:
+  double shape_;
+  double scale_;
+};
+
+class Laplace : public Distribution<Laplace> {
+ public:
+  using Distribution<Laplace>::sample;
+
+  explicit Laplace(double location = 0, double scale = 1)
+      : location_(location), scale_(scale) {}
+
+  static double draw(
+      boost::random::xoshiro256pp& engine,
+      double location = 0,
+      double scale = 1) {
+    thread_local static boost::random::laplace_distribution<> dist;
+    return location + (scale * dist(engine));
+  }
+
+  Eigen::VectorXd operator()(
+      boost::random::xoshiro256pp& engine, std::size_t n) const {
+    return Laplace::sample(engine, n, location_, scale_);
+  }
+
+  Eigen::VectorXd operator()(std::size_t n) const {
+    return Laplace::sample(Xoshiro256pp::getInstance(), n, location_, scale_);
+  }
+
+ private:
+  double location_;
+  double scale_;
+};
+
+class Cauchy : public Distribution<Cauchy> {
+ public:
+  using Distribution<Cauchy>::sample;
+
+  explicit Cauchy(double location = 0, double scale = 1)
+      : location_(location), scale_(scale) {}
+
+  static double draw(
+      boost::random::xoshiro256pp& engine,
+      double location = 0,
+      double scale = 1) {
+    thread_local static boost::random::cauchy_distribution<> dist;
+    return location + (scale * dist(engine));
+  }
+
+  Eigen::VectorXd operator()(
+      boost::random::xoshiro256pp& engine, std::size_t n) const {
+    return Cauchy::sample(engine, n, location_, scale_);
+  }
+
+  Eigen::VectorXd operator()(std::size_t n) const {
+    return Cauchy::sample(Xoshiro256pp::getInstance(), n, location_, scale_);
+  }
+
+ private:
+  double location_;
+  double scale_;
+};
+
+class Geometric {
+ public:
+  explicit Geometric(double p = 0.5) : p_(p) {}
+
+  std::size_t sample(boost::random::xoshiro256pp& engine) const {
+    return sample(engine, p_);
+  }
+
+  static std::size_t sample(
+      boost::random::xoshiro256pp& engine, double p = 0.5) {
+    thread_local static boost::random::geometric_distribution<> dist;
+    thread_local static double dist_p = 0.5;
+
+    if (p != dist_p) {
+      dist.param(decltype(dist)::param_type(p));
+      dist_p = p;
+    }
+
+    return dist(engine);
+  }
+
+ private:
+  double p_;
 };
 
 }  // namespace knoop::random
