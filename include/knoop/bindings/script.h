@@ -279,8 +279,8 @@ inline void definePhenomeParams(sol::state& lua) {
 
             return PhenotypeParams(
                 phenotypes,
-                tbl.get_or("gen_cor", identity),
-                tbl.get_or("env_cor", identity));
+                tbl.get_or("cor_genetic", identity),
+                tbl.get_or("cor_environmental", identity));
           },
           [](sol::this_state s,
              std::vector<Phenotype> phenotypes,
