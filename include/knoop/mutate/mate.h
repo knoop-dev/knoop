@@ -140,8 +140,8 @@ class AssortativeMating {
  private:
   std::size_t n_sex_;
   std::size_t n_pheno_;
-  RowMatrixXd std_male_;
-  RowMatrixXd std_female_;
+  RowMatrixXd wtd_male_;
+  RowMatrixXd wtd_female_;
   Eigen::MatrixXd mate_cor_;
   Eigen::MatrixXd objective_;
   bool exact_;
@@ -223,8 +223,8 @@ class AssortativeMating {
 inline void AssortativeMating::generateObjective() {
   double n_inv = 1.0 / n_sex_;
 
-  Eigen::MatrixXd male_cor = n_inv * std_male_.transpose() * std_male_;
-  Eigen::MatrixXd female_cor = n_inv * std_female_.transpose() * std_female_;
+  Eigen::MatrixXd male_cor = n_inv * wtd_male_.transpose() * wtd_male_;
+  Eigen::MatrixXd female_cor = n_inv * wtd_female_.transpose() * wtd_female_;
   Eigen::LLT<Eigen::MatrixXd> llt_male(male_cor);
 
   if (llt_male.info() != Eigen::Success)
@@ -283,7 +283,7 @@ inline void AssortativeMating::computeCor() {
   cor_ = Eigen::MatrixXd::Zero(n_pheno_, n_pheno_);
   for (std::size_t pair = 0; pair < n_sex_; ++pair)
     cor_.noalias() +=
-        std_male_.row(pair).transpose() * std_female_.row(match_cur_[pair]);
+        wtd_male_.row(pair).transpose() * wtd_female_.row(match_cur_[pair]);
   cor_ /= static_cast<double>(n_sex_);
 }
 
@@ -294,9 +294,9 @@ inline void AssortativeMating::proposeState() {
     id_swap_r_ = random::UniformInt::sample(engine_, 0, n_sex_);
 
   diff_male_ =
-      (std_male_.row(id_swap_l_) - std_male_.row(id_swap_r_)).transpose();
-  diff_female_ = (std_female_.row(match_cur_[id_swap_r_]) -
-                  std_female_.row(match_cur_[id_swap_l_]))
+      (wtd_male_.row(id_swap_l_) - wtd_male_.row(id_swap_r_)).transpose();
+  diff_female_ = (wtd_female_.row(match_cur_[id_swap_r_]) -
+                  wtd_female_.row(match_cur_[id_swap_l_]))
                      .transpose();
 
   double inv_n = 1.0 / static_cast<double>(n_sex_);
@@ -368,8 +368,13 @@ inline void AssortativeMating::rewindToOptimumMatching() {
 inline void AssortativeMating::operator()(State& state) {
   randomiseMatching();
 
-  utils::standardise(state.pheno().male(), std_male_);
-  utils::standardise(state.pheno().female(), std_female_);
+  if (!match_) return;
+
+  utils::standardise(
+      state.pheno().male(), wtd_male_, true, true, !whiten_, whiten_);
+
+  utils::standardise(
+      state.pheno().female(), wtd_female_, true, true, !whiten_, whiten_);
 
   if (!exact_) generateObjective();
 
@@ -405,7 +410,6 @@ inline void AssortativeMating::operator()(State& state) {
 
     if (itr % log_interval_ == 0) {
       if (diagnostics_) recordDiagnostics(itr);
-      Log::debug(
           "AssortativeMating: iteration {}, error l2 {:.3g} (optimal "
           "{:.3g}), error linfty {:.3g} (optimal {:.3g}), temperature "
           "{:.3g}",

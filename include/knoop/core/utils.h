@@ -19,7 +19,6 @@
 
 #include <knoop/core/log.h>
 #include <knoop/core/random.h>
-#include <sys/wait.h>
 
 #include <Eigen/Dense>
 #include <boost/process.hpp>
@@ -30,6 +29,11 @@
 #include <vector>
 
 namespace knoop::utils {
+
+inline std::uint64_t ceil64(std::uint64_t x) {
+  static constexpr std::size_t kNumBits = 64;
+  return (x + (kNumBits - 1)) / kNumBits;
+}
 
 template <typename T>
 inline std::string vectorToString(const T& vector) {
@@ -71,6 +75,8 @@ inline std::vector<std::string> vectorSuffix(
 
 inline Eigen::MatrixXd randomOrthogonal(std::size_t dim) {
   Eigen::MatrixXd random(dim, dim);
+  std::vector<double> random_non_eigen(dim * dim);
+
   random::Normal::sample(
       random::Xoshiro256pp::getInstance(), random.data(), dim * dim);
 
@@ -102,22 +108,48 @@ inline void standardise(
     EigenMatrixType& mat_into,
     bool population = true,
     bool centre = true,
-    bool scale = true) {
+    bool scale = true,
+    bool whiten = false) {
+  if (scale && whiten)
+    throw KnoopInvalidArgumentError(
+        "Arguments scale and whiten are mutually exclusive");
+
   if (!centre && !scale) {
     mat_into = mat;
     return;
   }
+
+  std::size_t n_scale = population ? mat.rows() : mat.rows() - 1;
+
   Eigen::RowVectorXd mean = centre ? Eigen::RowVectorXd(mat.colwise().mean())
                                    : Eigen::RowVectorXd::Zero(mat.cols());
   mat_into = mat.rowwise() - mean;
-  if (!scale) return;
+  if (!scale && !whiten) return;
 
-  Eigen::RowVectorXd std =
-      ((mat.rowwise() - mean).array().square().colwise().sum() /
-       (population ? mat.rows() : mat.rows() - 1))
-          .sqrt()
-          .max(1e-10);
-  mat_into = ((mat.rowwise() - mean).array().rowwise() / std.array());
+  if (scale) {
+    Eigen::RowVectorXd std =
+        ((mat.rowwise() - mean).array().square().colwise().sum() / n_scale)
+            .sqrt()
+            .max(1e-10);
+    mat_into = ((mat.rowwise() - mean).array().rowwise() / std.array());
+  }
+
+  /** sometimes whitening is more desirable than the */
+  Eigen::MatrixXd centred = mat.rowwise() - mean;
+  Eigen::MatrixXd covariance =
+      (centred.transpose() * centred) / static_cast<double>(n_scale);
+
+  if (whiten) {
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> evd(covariance);
+    Eigen::MatrixXd whitener = evd.eigenvectors() *
+                               evd.eigenvalues()
+                                   .cwiseMax(1e-10)
+                                   .cwiseInverse()
+                                   .cwiseSqrt()
+                                   .asDiagonal() *
+                               evd.eigenvectors().transpose();
+    mat_into = centred * whitener;
+  }
 }
 
 inline std::vector<std::size_t> order(const Eigen::VectorXd& v) {
