@@ -66,14 +66,13 @@ class SampleEstimatorExternalStrategy : public SampleEstimatorStrategy<P> {
     Eigen::MatrixXd result = parseFile<Eigen::MatrixXd>(out_path_);
     if (static_cast<std::size_t>(result.rows()) != this->numRows() ||
         static_cast<std::size_t>(result.cols()) != this->numCols())
-      throw std::runtime_error(
-          std::format(
-              "{}: expected {}x{}, got {}x{}",
-              cmd_.string(),
-              this->numRows(),
-              this->numCols(),
-              result.rows(),
-              result.cols()));
+      throw KnoopDimensionError(
+          "{}: expected {}x{}, got {}x{}",
+          cmd_.string(),
+          this->numRows(),
+          this->numCols(),
+          result.rows(),
+          result.cols());
     this->data_ = std::move(result);
   }
 
@@ -95,11 +94,10 @@ class SampleEstimatorExternalStrategy : public SampleEstimatorStrategy<P> {
     }
 
     if (result.exit_code != 0)
-      throw std::runtime_error(
-          std::format(
-              "{} exited with code {}, check log for detailed output",
-              cmd_.string(),
-              result.exit_code));
+      throw KnoopIOError(
+          "{} exited with code {}, check log for detailed output",
+          cmd_.string(),
+          result.exit_code);
   }
 };
 

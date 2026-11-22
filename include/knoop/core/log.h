@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
+
 #include <boost/algorithm/string.hpp>
 #include <condition_variable>
 #include <deque>
@@ -27,10 +29,11 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 namespace knoop {
 
-enum LogLevel { Debug, Info, Warning, Error, None };
+enum class LogLevel { Debug, Info, Warning, Error, None };
 
 inline std::string logLevelToString(LogLevel level) {
   switch (level) {
@@ -45,17 +48,17 @@ inline std::string logLevelToString(LogLevel level) {
     case LogLevel::None:
       return "NONE";
   }
-  __builtin_unreachable();
+  std::unreachable();
 }
 
 inline LogLevel logLevelFromString(const std::string& level) {
-  std::string upper = boost::to_upper_copy(level);
-  if (upper == "DEBUG") return LogLevel::Debug;
-  if (upper == "INFO") return LogLevel::Info;
-  if (upper == "WARNING") return LogLevel::Warning;
-  if (upper == "ERROR") return LogLevel::Error;
-  if (upper == "NONE") return LogLevel::None;
-  throw std::runtime_error("Unknown LogLevel " + upper);
+  std::string upper = boost::to_lower_copy(level);
+  if (upper == "debug") return LogLevel::Debug;
+  if (upper == "info") return LogLevel::Info;
+  if (upper == "warning") return LogLevel::Warning;
+  if (upper == "error") return LogLevel::Error;
+  if (upper == "none") return LogLevel::None;
+  throw KnoopRangeError("Unknown LogLevel {}", level);
 }
 
 inline std::ostream& operator<<(std::ostream& os, LogLevel level) {

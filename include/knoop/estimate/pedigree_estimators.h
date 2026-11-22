@@ -173,19 +173,20 @@ class EstimatorAncestorCovStrategy : public PopulationEstimatorStrategy {
                 degree,
                 componentToString(type),
                 scale ? "cor" : "cov"),
+            utils::vectorPrefix(params.pheno.names(), "self_"),
+            utils::vectorPrefix(params.pheno.names(), "ancestor_"),
+            params.pheno.size(),
+            params.pheno.size()) {
+    if (params.pedigreeMaxDepth() < degree_) {
+      throw KnoopPedigreeError(
+          "Pedigree depth {} is insufficient to compute ancestor covariance of "
+          "degree {}; maximum depth must be at least {}",
+          params.pedigreeMaxDepth(),
+          degree_,
+          degree_);
             utils::vectorPrefix(params.pheno.names, "self_"),
             utils::vectorPrefix(params.pheno.names, "ancestor_"),
             params.pheno.n_pheno,
-            params.pheno.n_pheno) {
-    if (params.global.pedigree_max_depth < degree_) {
-      throw std::invalid_argument(
-          std::format(
-              "Pedigree depth {} is insufficient to compute ancestor "
-              "covariance of degree {}; --pedigree-max-depth must be at least "
-              "{}",
-              params.global.pedigree_max_depth,
-              degree_,
-              degree_));
     }
   }
 

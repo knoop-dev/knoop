@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
 #include <knoop/core/params.h>
 #include <knoop/core/random.h>
 #include <knoop/core/state.h>
@@ -119,6 +120,10 @@ inline void ScorePhenotypes::scoreGenetic(State& state) {
       }
     }
   }
+
+  if (!genetic_buffer.allFinite())
+    throw KnoopNumericalError(
+        "Infinite or NaN values in phenotype genetic component buffer");
 }
 
 inline void ScorePhenotypes::scoreEnvironmental(State& state) {
@@ -131,6 +136,10 @@ inline void ScorePhenotypes::scoreEnvironmental(State& state) {
 
   pheno_env_buf =
       pheno_env_buf * env_chol_.transpose() * var_env_.cwiseSqrt().asDiagonal();
+
+  if (!environmental_buffer.allFinite())
+    throw KnoopNumericalError(
+        "Infinite or NaN values in phenotype genetic component buffer");
 }
 
 inline void ScorePhenotypes::scoreVertical(State& state) {
@@ -162,6 +171,10 @@ inline void ScorePhenotypes::scoreVertical(State& state) {
 
     phenos_off.col(pheno) *= std::sqrt(var_vert_(pheno)) * norm;
   }
+
+  if (!indirect_offspring.allFinite())
+    throw KnoopNumericalError(
+        "Infinite or NaN values in phenotype genetic component buffer");
 }
 
 inline void ScorePhenotypes::scoreTotal(State& state) {
@@ -176,6 +189,9 @@ inline void ScorePhenotypes::operator()(State& state) {
   scoreEnvironmental(state);
   scoreVertical(state);
   scoreTotal(state);
+
+  if (!state.pheno()(Component::Total).allFinite())
+    throw KnoopNumericalError("Infinite or NaN values in phenotype buffer");
 }
 
 }  // namespace knoop

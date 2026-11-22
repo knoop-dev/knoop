@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
 #include <format>
 #include <ostream>
@@ -46,7 +48,7 @@ inline Component componentFromString(const std::string& s) {
   if (l == "environmental") return Component::Environmental;
   if (l == "vertical") return Component::Vertical;
   if (l == "total") return Component::Total;
-  throw std::runtime_error(std::format("Unknown component type {}", l));
+  throw KnoopInvalidArgumentError("Unknown component type {}", l);
 }
 
 inline std::string componentToString(Component type) {

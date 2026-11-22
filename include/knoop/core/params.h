@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
 #include <knoop/core/log.h>
 #include <knoop/estimate/estimator.h>
 #include <knoop/sample/sample.h>

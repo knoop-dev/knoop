@@ -41,7 +41,7 @@ inline void GenerateHaplotypes::operator()(State& state) {
   GenotypeBuffer& buf = state.geno();
 
   if (buf.view() != BufferLayout::LocusMajor)
-    throw std::runtime_error("generate haplotypes in loc-major view");
+    throw KnoopBufferLayoutError("generate haplotypes in loc-major view");
 
   HaplotypeBuffer& h0 = buf.paternal();
   HaplotypeBuffer& h1 = buf.maternal();

@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
 #include <knoop/sample/proband.h>
 
 #include <filesystem>

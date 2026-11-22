@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
 #include <knoop/core/generation.h>
 #include <knoop/data/matching.h>
 
@@ -129,15 +130,12 @@ inline void Pedigree::push(
 
 inline Individual Pedigree::at(std::size_t index, std::size_t depth) const {
   if (index > n_ind_)
-    throw std::invalid_argument(
-        std::format("Individual index must be in range [0, {}]", n_ind_ - 1));
+    throw KnoopRangeError(
+        "Individual index must be in range [0, {}]", n_ind_ - 1);
 
   if (depth >= max_size_)
-    throw std::invalid_argument(
-        std::format(
-            "Pedigree::at depth {} exceeds pedigree depth {}",
-            depth,
-            max_size_));
+    throw KnoopRangeError(
+        "Pedigree::at depth {} exceeds pedigree depth {}", depth, max_size_);
 
   return Individual{.index = index, .depth = depth, .pedigree = this};
 }
@@ -153,7 +151,7 @@ inline std::size_t Pedigree::spouseIndex(const Individual& self) const {
 
 inline std::size_t Pedigree::fatherIndex(const Individual& self) const {
   if (isMaxDepth(self.depth))
-    throw std::runtime_error(
+    throw KnoopPedigreeError(
         "Pedigree::fatherIndex: Individual is at maximum depth");
 
   return isMale(self) ? self.index
@@ -162,7 +160,7 @@ inline std::size_t Pedigree::fatherIndex(const Individual& self) const {
 
 inline std::size_t Pedigree::motherIndex(const Individual& self) const {
   if (isMaxDepth(self.depth))
-    throw std::runtime_error(
+    throw KnoopPedigreeError(
         "Pedigree::motherIndex: Individual is at maximum depth");
 
   return isMale(self) ? n_sex_ + history_.first[self.depth + 1][self.index]
@@ -171,7 +169,7 @@ inline std::size_t Pedigree::motherIndex(const Individual& self) const {
 
 inline std::size_t Pedigree::siblingIndex(const Individual& self) const {
   if (isMaxDepth(self.depth))
-    throw std::runtime_error(
+    throw KnoopPedigreeError(
         "Pedigree::siblingIndex: Individual is at maximum depth");
 
   return isMale(self) ? n_sex_ + history_.first[self.depth + 1][self.index]
@@ -256,7 +254,7 @@ inline std::vector<Individual> Pedigree::traversal(
 inline std::vector<std::vector<Individual>> Pedigree::getCousins(
     const Individual& self, std::size_t degree) {
   if (degree == 0)
-    throw std::invalid_argument(
+    throw KnoopInvalidArgumentError(
         "Pedigree::find_cousins: degree must be non-zero.");
 
   std::size_t seq_len = 2 * degree;
@@ -286,7 +284,7 @@ inline std::vector<std::vector<Individual>> Pedigree::getSiblings() const {
 inline std::vector<std::vector<Individual>> Pedigree::getCousins(
     std::size_t degree) const {
   if (degree == 0)
-    throw std::invalid_argument(
+    throw KnoopInvalidArgumentError(
         "Pedigree::find_cousins: degree must be non-zero.");
 
   auto cousins_per_ind = static_cast<std::size_t>(1ULL << (2 * degree));
@@ -303,7 +301,7 @@ inline std::vector<std::vector<Individual>> Pedigree::getCousins(
 inline std::vector<std::vector<Individual>> Pedigree::getAncestors(
     const Individual& self, std::size_t degree) {
   if (degree == 0)
-    throw std::invalid_argument(
+    throw KnoopInvalidArgumentError(
         "Pedigree::find_ancestors: degree must be non-zero");
 
   std::size_t seq_len = degree;
@@ -320,7 +318,7 @@ inline std::vector<std::vector<Individual>> Pedigree::getAncestors(
 inline std::vector<std::vector<Individual>> Pedigree::getAncestors(
     std::size_t degree) const {
   if (degree == 0)
-    throw std::invalid_argument(
+    throw KnoopInvalidArgumentError(
         "Pedigree::find_ancestors: degree must be non-zero");
 
   auto ancestors_per_ind = static_cast<std::size_t>(1ULL << degree);

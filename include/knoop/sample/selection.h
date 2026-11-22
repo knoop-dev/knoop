@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
+
 #include <Eigen/Dense>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <functional>
@@ -37,6 +39,7 @@ inline AggFunction aggregatorFromString(const std::string& s) {
   if (l == "mean") return AggFunction::Mean;
   if (l == "identity") return AggFunction::Identity;
   throw std::runtime_error("Unknown aggregator type" + s);
+  throw KnoopInvalidArgumentError("Unknown aggregator type {}", s);
 }
 
 inline Eigen::MatrixXd aggregate(
@@ -46,14 +49,13 @@ inline Eigen::MatrixXd aggregate(
   if (agg == AggFunction::Min) return preaggregate.colwise().minCoeff();
   if (agg == AggFunction::Identity) {
     if (preaggregate.rows() > 1)
-      throw std::runtime_error(
-          std::format(
-              "Identity aggregation can only be applied to single individual "
-              "(got {})",
-              preaggregate.rows()));
+      throw KnoopInvalidArgumentError(
+          "Identity aggregation can only be applied to single individual "
+          "(got {})",
+          preaggregate.rows());
     return preaggregate.row(0);
   }
-  throw std::invalid_argument("Unrecognised aggregation function");
+  throw KnoopInvalidArgumentError("Unrecognised aggregation function");
 }
 
 /**

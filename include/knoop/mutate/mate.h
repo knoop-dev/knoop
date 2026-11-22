@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <knoop/core/error.h>
 #include <knoop/core/params.h>
 #include <knoop/core/random.h>
 #include <knoop/core/state.h>
@@ -228,16 +229,17 @@ inline void AssortativeMating::generateObjective() {
   Eigen::LLT<Eigen::MatrixXd> llt_male(male_cor);
 
   if (llt_male.info() != Eigen::Success)
-    throw std::runtime_error(
-        "AssortativeMating: male trait correlation matrix is singular");
+    throw KnoopNumericalError(
+        "Cholesky computation of male trait covariance matrix failed");
 
   Eigen::LLT<Eigen::MatrixXd> llt_col(
       female_cor - (mate_cor_.transpose() * llt_male.solve(mate_cor_)));
 
   if (llt_col.info() != Eigen::Success)
-    throw std::runtime_error(
-        "AssortativeMating: unable to perform random draw of mate correlation "
-        "matrix due to male and trait correlation matrices");
+    throw KnoopNumericalError(
+        "Unable to perform random draw of mate correlation matrix due to male "
+        "and trait correlation matrices; consider using a weaker mating "
+        "objective or weakening trait correlation structure");
 
   const Eigen::MatrixXd l_row = llt_male.matrixL();
   const Eigen::MatrixXd l_col = llt_col.matrixL();

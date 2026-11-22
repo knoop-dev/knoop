@@ -46,16 +46,14 @@ inline bp::filesystem::path resolveExecutable(const std::string& s) {
     bp::filesystem::path exec_abs = bp::filesystem::absolute(exec);
     if (!bp::filesystem::exists(exec_abs) ||
         access(exec_abs.c_str(), X_OK) != 0)
-      throw std::runtime_error(
-          std::format("{} is not an executable file", exec_abs.string()));
+      throw KnoopIOError("{} is not an executable file", exec_abs.string());
     return exec_abs;
   }
 
   // otherwise, search PATH for the executable
   auto found = bp::environment::find_executable(exec);
   if (found.empty())
-    throw std::runtime_error(
-        std::format("Executable {} not found in PATH", exec.string()));
+    throw KnoopIOError("Executable {} not found in PATH", exec.string());
   return found;
 }
 
@@ -65,7 +63,15 @@ inline ProcessResult runProcess(
   asio::readable_pipe pipe{ctx};
   std::string pipe_buf;
 
-  // launch the process
+  /**
+   * if multithreading is enabled, sleep the OMP threads so that the subprocess
+   * can claim the threads that the worker is using
+   *
+   * this branch runs only in the event that omp_pause_resource_all fails to
+   * pause resources, which should be understood as an error
+   */
+  if (multithread && omp_pause_resource_all(omp_pause_soft))
+    throw KnoopGenericError("Encountered error while pausing OMP threads");
   bp::process proc(ctx, cmd, args, bp::process_stdio{.out = pipe, .err = pipe});
 
   // read in stdout + stderr
@@ -73,9 +79,10 @@ inline ProcessResult runProcess(
   asio::read(pipe, asio::dynamic_buffer(pipe_buf), ec);
 
   if (ec && (ec != asio::error::eof))
-    throw std::runtime_error(
-        std::format(
-            "process {} failed to parse stdout / stderr output", cmd.string()));
+    throw KnoopIOError(
+        "process {} failed to parse stdout / stderr output (error code {})",
+        cmd.string(),
+        ec.to_string());
 
   proc.wait();
 

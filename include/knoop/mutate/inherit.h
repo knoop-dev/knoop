@@ -214,7 +214,7 @@ inline void UpdateGenome::generateOffspringHaplotypes(
 
 inline void UpdateGenome::operator()(State& state) {
   if (state.geno().view() != BufferLayout::IndividualMajor)
-    throw std::runtime_error("update genome requires ind-major view");
+    throw KnoopBufferLayoutError("update genome requires ind-major view");
 
   // parallelise via pragma
   auto spouse_pairs = state.pedigree.getSpousePairs(0);

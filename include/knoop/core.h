@@ -18,6 +18,7 @@
 #pragma once
 
 #include <knoop/core/distributions.h>
+#include <knoop/core/error.h>
 #include <knoop/core/log.h>
 #include <knoop/core/params.h>
 #include <knoop/core/random.h>
