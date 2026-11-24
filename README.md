@@ -18,9 +18,6 @@ This software is under development and may contain bugs. Please report bugs
 via [issues](https://github.com/knoop/issues) on GitHub or via
 [email](mailto:kh626@imperial.ac.uk).
 
-## Usage
-**knoop** may not be used towards any ends which aim
-
 ## Installation
 
 ### Prebuilt binaries (recommended)
